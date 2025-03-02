@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    tools:context=".RealTimeActivity">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/view_finder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Overlay for camera controls -->
+    <View
+        android:id="@+id/bottom_gradient"
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:background="@drawable/bottom_gradient"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- Switch camera button -->
+    <ImageButton
+        android:id="@+id/switch_camera"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginBottom="50dp"
+        android:background="@drawable/round_button_background"
+        android:contentDescription="Switch camera"
+        android:padding="10dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_switch_camera"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <Button
+        android:id="@+id/redirect_severity"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_marginStart="24dp"
+        android:background="@drawable/round_button_background"
+        android:text="Go to Severity"
+        android:textColor="@android:color/white"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        app:layout_constraintBottom_toBottomOf="@id/switch_camera"
+        app:layout_constraintStart_toEndOf="@id/switch_camera"
+        app:layout_constraintTop_toTopOf="@id/switch_camera" />
+
+    <!-- Toolbar at the top -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="#80000000"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:title="Acne Vision"
+        app:titleTextColor="@android:color/white" />
+
+    <!-- Result text view for displaying real-time analysis -->
+    <TextView
+        android:id="@+id/result_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="#80000000"
+        android:padding="12dp"
+        android:text="LIVE DETECTION: Not started"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/toolbar" />
+        
+    <!-- Details text view for displaying acne counts -->
+    <TextView
+        android:id="@+id/details_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="#80000000"
+        android:padding="12dp"
+        android:text="DETECTED ACNE TYPES:\nWaiting for analysis..."
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:gravity="center"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/result_text" />
+
+</androidx.constraintlayout.widget.ConstraintLayout> 

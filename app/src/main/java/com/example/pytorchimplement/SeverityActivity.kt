@@ -74,7 +74,18 @@ class SeverityActivity : AppCompatActivity() {
     // Pass to Inference Activity
     private fun processImages() {
         val intent = Intent(this, ModelInferenceActivity::class.java)
-        intent.putExtra("selected_images", selectedImages.toTypedArray())
+        
+        // Pass count of images
+        intent.putExtra("selected_images_count", selectedImages.size)
+        
+        // Pass each image individually
+        for (i in selectedImages.indices) {
+            intent.putExtra("selected_image_$i", selectedImages[i])
+        }
+        
+        // Mark that we're passing selected images
+        intent.putExtra("selected_images", true)
+        
         startActivity(intent)
     }
 }

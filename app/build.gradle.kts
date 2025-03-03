@@ -65,4 +65,7 @@ dependencies {
     
 //    Chart Dependencies
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+    
+//    ONNX Runtime Dependencies
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.16.3")
 }

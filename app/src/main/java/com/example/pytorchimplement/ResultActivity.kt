@@ -31,6 +31,7 @@ import java.util.ArrayList
 
 /**
  * Activity that displays the results of acne analysis with severity scores and bounding boxes.
+ * Now using ONNX Runtime for inference.
  */
 class ResultActivity : AppCompatActivity() {
     

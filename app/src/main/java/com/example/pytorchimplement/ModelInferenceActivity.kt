@@ -26,6 +26,14 @@ class ModelInferenceActivity : AppCompatActivity() {
     private val modelInputChannels = 3
     private val modelFileName = "yolov9.onnx"
     
+    // Model input dimensions
+    private var inputWidth = 640
+    private var inputHeight = 640
+    private var inputChannels = 3
+    
+    // Store detections for GAGS calculation
+    private var detections = listOf<ImageAnalyzer.Detection>()
+    
     companion object {
         private const val TAG = "ModelInferenceActivity"
     }
@@ -267,6 +275,9 @@ class ModelInferenceActivity : AppCompatActivity() {
         // Detection confidence threshold
         val confidenceThreshold = 0.2f
         
+        // List to store detections
+        val detectionsList = mutableListOf<ImageAnalyzer.Detection>()
+        
         try {
             // Get output tensor (YOLOv9 output tensor name is typically "output0" or "output")
             val outputTensor = output.first { o -> o.key == "output" }
@@ -325,10 +336,39 @@ class ModelInferenceActivity : AppCompatActivity() {
                             // Update counts
                             val className = classNames[maxClassId] ?: continue
                             acneCounts[className] = acneCounts[className]!! + 1
+                            
+                            // Extract bounding box coordinates
+                            val centerX = rawData.get(xIndex)
+                            val centerY = rawData.get(xIndex + 1)
+                            val width = rawData.get(xIndex + 2)
+                            val height = rawData.get(xIndex + 3)
+                            
+                            // Create normalized bounding box (0-1 range)
+                            val boundingBox = ImageAnalyzer.BoundingBox(
+                                x = centerX / modelInputWidth,
+                                y = centerY / modelInputHeight,
+                                width = width / modelInputWidth,
+                                height = height / modelInputHeight
+                            )
+                            
+                            // Create detection object
+                            val detection = ImageAnalyzer.Detection(
+                                classId = maxClassId,
+                                className = className,
+                                confidence = maxClassProb,
+                                boundingBox = boundingBox
+                            )
+                            
+                            // Add to detections list
+                            detectionsList.add(detection)
                         }
                     }
                 }
             }
+            
+            // Store detections for GAGS calculation
+            this.detections = detectionsList
+            
         } catch (e: Exception) {
             Log.e(TAG, "Error processing ONNX results: ${e.message}")
             e.printStackTrace()
@@ -337,34 +377,47 @@ class ModelInferenceActivity : AppCompatActivity() {
 
     private fun displayResults(acneCounts: Map<String, Int>) {
         // Calculate severity
-        val weights = mapOf(
-            "comedone" to 0.25f,
-            "pustule" to 0.5f,
-            "papule" to 0.75f,
-            "nodule" to 1.0f
-        )
+        val gagsCalculator = GAGSCalculator()
         
-        val totalCount = acneCounts.values.sum()
-        var weightedScore = 0f
-        
-        acneCounts.forEach { (type, count) ->
-            weightedScore += count * (weights[type] ?: 0f)
-        }
-        
-        // Calculate as float first
-        val normalizedSeverityFloat = if (totalCount > 0) {
-            (weightedScore / totalCount).coerceIn(0f, 1f)
+        // If we have detections with bounding boxes, use GAGS
+        val normalizedSeverity = if (detections.isNotEmpty()) {
+            gagsCalculator.calculateGAGSScore(detections)
         } else {
-            0f
+            // Fallback to simple weight-based calculation
+            val weights = mapOf(
+                "comedone" to 0.25f,
+                "pustule" to 0.5f,
+                "papule" to 0.75f,
+                "nodule" to 1.0f
+            )
+            
+            val totalCount = acneCounts.values.sum()
+            var weightedScore = 0f
+            
+            acneCounts.forEach { (type, count) ->
+                weightedScore += count * (weights[type] ?: 0f)
+            }
+            
+            // Calculate as float first
+            val normalizedSeverityFloat = if (totalCount > 0) {
+                (weightedScore / totalCount).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            
+            // Convert to integer scale (0-10)
+            (normalizedSeverityFloat * 10).toInt()
         }
         
-        // Convert to integer scale (0-10)
-        val normalizedSeverity = (normalizedSeverityFloat * 10).toInt()
-        
-        val severityLevel = when {
-            normalizedSeverity < 3 -> "Low"
-            normalizedSeverity < 7 -> "Medium"
-            else -> "High"
+        // Get severity description from GAGS calculator
+        val severityLevel = if (detections.isNotEmpty()) {
+            gagsCalculator.getSeverityDescription(normalizedSeverity)
+        } else {
+            when {
+                normalizedSeverity < 3 -> "Low"
+                normalizedSeverity < 7 -> "Medium"
+                else -> "High"
+            }
         }
         
         // Prepare display text
@@ -376,7 +429,7 @@ class ModelInferenceActivity : AppCompatActivity() {
             resultsText.append("${type.capitalize()}: $count\n")
         }
         
-        resultsText.append("\nTotal Acne Count: $totalCount")
+        resultsText.append("\nTotal Acne Count: ${acneCounts.values.sum()}")
         
         // Update the UI
         resultTextView.text = resultsText.toString()
@@ -384,7 +437,7 @@ class ModelInferenceActivity : AppCompatActivity() {
         // Start Result activity with the analysis
         val intent = Intent(this, ResultActivity::class.java)
         intent.putExtra("severity", normalizedSeverity)
-        intent.putExtra("total_count", totalCount)
+        intent.putExtra("total_count", acneCounts.values.sum())
         intent.putExtra("comedone_count", acneCounts["comedone"] ?: 0)
         intent.putExtra("pustule_count", acneCounts["pustule"] ?: 0)
         intent.putExtra("papule_count", acneCounts["papule"] ?: 0)

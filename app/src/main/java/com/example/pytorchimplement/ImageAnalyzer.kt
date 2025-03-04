@@ -111,6 +111,9 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     private var inputHeight = 640
     private var inputChannels = 3
     
+    // Track the last set of detections for GAGS calculation
+    private var lastDetections: List<Detection>? = null
+    
     init {
         loadModel()
     }
@@ -590,6 +593,9 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             val severity = calculateSeverityScore(acneCounts)
             Log.d(TAG, "Analysis complete - Severity: $severity, Counts: $acneCounts, Total: ${acneCounts.values.sum()}")
             
+            // Store detections for GAGS calculation
+            setLastDetections(detections)
+            
             return AnalysisResult(
                 severity = severity,
                 timestamp = System.currentTimeMillis(),
@@ -614,7 +620,13 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     }
     
     private fun calculateSeverityScore(acneCounts: Map<String, Int>): Int {
-        // Calculate severity based on acne counts and type
+        // Use the GAGS methodology if we have detections with bounding boxes
+        if (lastDetections != null && lastDetections!!.isNotEmpty()) {
+            val gagsCalculator = GAGSCalculator()
+            return gagsCalculator.calculateGAGSScore(lastDetections!!)
+        }
+        
+        // Fallback to simple weighted calculation if no detections with bounding boxes
         // Assign weights to different acne types (more severe types have higher weights)
         val comedoneWeight = 1 // Mild
         val pustuleWeight = 2  // Moderate
@@ -635,6 +647,11 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
         } else {
             0
         }
+    }
+    
+    // Update last detections when they're available
+    fun setLastDetections(detections: List<Detection>) {
+        lastDetections = detections
     }
     
     // Add Non-Maximum Suppression function

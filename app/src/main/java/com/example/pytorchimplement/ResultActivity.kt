@@ -82,13 +82,9 @@ class ResultActivity : AppCompatActivity() {
         setupImageContainer()
         
         // Set severity score
+        val gagsCalculator = GAGSCalculator()
         val severityText = String.format("Acne Severity: %s (%d%%)", 
-            when {
-                severity < 3 -> "Mild"
-                severity < 5 -> "Moderate" 
-                severity < 8 -> "Moderately severe"
-                else -> "Severe"
-            },
+            gagsCalculator.getSeverityDescription(severity),
             (severity * 10) // Convert to percentage
         )
         severityTextView.text = severityText
@@ -114,30 +110,37 @@ class ResultActivity : AppCompatActivity() {
 
         // Set recommendations based on severity
         val recommendationsBuilder = StringBuilder("Recommendations:\n\n")
-        when {
-            severity < 3 -> {
+        val severityDescription = gagsCalculator.getSeverityDescription(severity)
+        
+        when (severityDescription) {
+            "Mild" -> {
                 recommendationsBuilder.append("• Mild acne detected - over-the-counter treatments may be effective\n")
                 recommendationsBuilder.append("• Recommended treatments: Benzoyl peroxide, Salicylic acid\n")
                 recommendationsBuilder.append("• Maintain a consistent face washing routine\n")
                 recommendationsBuilder.append("• Avoid excessive scrubbing or harsh cleansers")
             }
-            severity < 5 -> {
+            "Moderate" -> {
                 recommendationsBuilder.append("• Moderate acne detected - consider prescription treatments\n")
                 recommendationsBuilder.append("• Consider consulting with a dermatologist\n")
                 recommendationsBuilder.append("• Recommended treatments: Topical antibiotics, Retinoids\n")
                 recommendationsBuilder.append("• Avoid picking or squeezing acne lesions")
             }
-            severity < 8 -> {
-                recommendationsBuilder.append("• Moderately severe acne detected - prescription treatments recommended\n")
+            "Severe" -> {
+                recommendationsBuilder.append("• Severe acne detected - prescription treatments recommended\n")
                 recommendationsBuilder.append("• Consult with a dermatologist for personalized treatment\n")
                 recommendationsBuilder.append("• Recommended treatments: Oral antibiotics, Stronger retinoids\n")
                 recommendationsBuilder.append("• Consider lifestyle factors like diet and stress")
             }
-            else -> {
-                recommendationsBuilder.append("• Severe acne detected - urgent dermatological care recommended\n")
+            "Very Severe" -> {
+                recommendationsBuilder.append("• Very severe acne detected - urgent dermatological care required\n")
                 recommendationsBuilder.append("• See a dermatologist as soon as possible\n")
-                recommendationsBuilder.append("• Potential treatments: Isotretinoin, Hormone therapy\n")
+                recommendationsBuilder.append("• Potential treatments: Isotretinoin, Hormone therapy, Corticosteroids\n")
                 recommendationsBuilder.append("• Monitor for psychological impacts and seek support if needed")
+            }
+            else -> {
+                recommendationsBuilder.append("• Please consult with a dermatologist for personalized advice\n")
+                recommendationsBuilder.append("• Maintain a gentle skincare routine\n")
+                recommendationsBuilder.append("• Avoid picking or squeezing acne lesions")
             }
         }
         recommendationsTextView.text = recommendationsBuilder.toString()

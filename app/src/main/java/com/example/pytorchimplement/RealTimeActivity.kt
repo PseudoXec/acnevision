@@ -54,21 +54,13 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
             // READ_MEDIA_IMAGES is only needed if you're accessing the gallery
             // Manifest.permission.READ_MEDIA_IMAGES
         )
-    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+    } else
         // Android 10+ (API 29+)
         arrayOf(
             Manifest.permission.CAMERA,
             Manifest.permission.READ_EXTERNAL_STORAGE
             // WRITE_EXTERNAL_STORAGE doesn't give general write access on API 29+
         )
-    } else {
-        // Older Android versions
-        arrayOf(
-            Manifest.permission.CAMERA,
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
-        )
-    }
 
     // Camera-only permission launcher (primary use case)
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -409,6 +401,7 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                     "Total=$totalCount, Detections=${result.detections.size}")
         }
     }
+
 
     override fun onDestroy() {
         super.onDestroy()

@@ -1,5 +1,6 @@
 package com.example.pytorchimplement
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -52,7 +53,9 @@ class ResultActivity : AppCompatActivity() {
     private var scaleFactor = 1.0f
     private var offsetX = 0f
     private var offsetY = 0f
-    
+
+
+    @SuppressLint("DefaultLocale")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_result)
@@ -67,7 +70,7 @@ class ResultActivity : AppCompatActivity() {
         pieChart = findViewById(R.id.pie_chart)
 
         // Get the analysis data from the intent
-        val severity = intent.getIntExtra("severity", 0)
+//        val severity = intent.getIntExtra("severity", 0)
         val totalCount = intent.getIntExtra("total_count", 0)
         val comedoneCount = intent.getIntExtra("comedone_count", 0)
         val pustuleCount = intent.getIntExtra("pustule_count", 0)
@@ -80,14 +83,13 @@ class ResultActivity : AppCompatActivity() {
         
         // Create the container for the image and box overlay
         setupImageContainer()
-        
-        // Set severity score
-        val gagsCalculator = GAGSCalculator()
-        val severityText = String.format("Acne Severity: %s (%d%%)", 
-            gagsCalculator.getSeverityDescription(severity),
-            (severity * 10) // Convert to percentage
-        )
+
+        // Retrieve stored values from GAGSData
+        val severity = GAGSData.severity
+
+        val severityText = String.format("Acne Severity: %s", severity)
         severityTextView.text = severityText
+
 
         // Set acne summary
         val summaryBuilder = StringBuilder()
@@ -110,37 +112,27 @@ class ResultActivity : AppCompatActivity() {
 
         // Set recommendations based on severity
         val recommendationsBuilder = StringBuilder("Recommendations:\n\n")
-        val severityDescription = gagsCalculator.getSeverityDescription(severity)
+        val severityDescription = GAGSData.severity
         
         when (severityDescription) {
+            "No Acne" ->{
+                recommendationsBuilder.append("• No Acne detected")
+            }
             "Mild" -> {
-                recommendationsBuilder.append("• Mild acne detected - over-the-counter treatments may be effective\n")
-                recommendationsBuilder.append("• Recommended treatments: Benzoyl peroxide, Salicylic acid\n")
-                recommendationsBuilder.append("• Maintain a consistent face washing routine\n")
-                recommendationsBuilder.append("• Avoid excessive scrubbing or harsh cleansers")
+                recommendationsBuilder.append("• Mild acne detected")
+
             }
             "Moderate" -> {
-                recommendationsBuilder.append("• Moderate acne detected - consider prescription treatments\n")
-                recommendationsBuilder.append("• Consider consulting with a dermatologist\n")
-                recommendationsBuilder.append("• Recommended treatments: Topical antibiotics, Retinoids\n")
-                recommendationsBuilder.append("• Avoid picking or squeezing acne lesions")
+                recommendationsBuilder.append("• Moderate acne detected - consider prescription treatments")
             }
             "Severe" -> {
-                recommendationsBuilder.append("• Severe acne detected - prescription treatments recommended\n")
-                recommendationsBuilder.append("• Consult with a dermatologist for personalized treatment\n")
-                recommendationsBuilder.append("• Recommended treatments: Oral antibiotics, Stronger retinoids\n")
-                recommendationsBuilder.append("• Consider lifestyle factors like diet and stress")
+                recommendationsBuilder.append("• Severe acne detected - prescription treatments recommended")
             }
             "Very Severe" -> {
-                recommendationsBuilder.append("• Very severe acne detected - urgent dermatological care required\n")
-                recommendationsBuilder.append("• See a dermatologist as soon as possible\n")
-                recommendationsBuilder.append("• Potential treatments: Isotretinoin, Hormone therapy, Corticosteroids\n")
-                recommendationsBuilder.append("• Monitor for psychological impacts and seek support if needed")
+                recommendationsBuilder.append("• Very severe acne detected - urgent dermatological care required")
             }
             else -> {
-                recommendationsBuilder.append("• Please consult with a dermatologist for personalized advice\n")
-                recommendationsBuilder.append("• Maintain a gentle skincare routine\n")
-                recommendationsBuilder.append("• Avoid picking or squeezing acne lesions")
+                recommendationsBuilder.append("• Please consult with a dermatologist for personalized advice")
             }
         }
         recommendationsTextView.text = recommendationsBuilder.toString()
@@ -363,14 +355,14 @@ class ResultActivity : AppCompatActivity() {
         private val paint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.STROKE
-            strokeWidth = 8f  // Thicker lines for better visibility
+            strokeWidth = 2f  // Thicker lines for better visibility
         }
         
         private val textPaint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.FILL
             color = Color.WHITE
-            textSize = 40f  // Larger text for better visibility
+            textSize = 5f  // Larger text for better visibility
         }
         
         private val backgroundPaint = Paint().apply {

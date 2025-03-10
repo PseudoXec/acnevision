@@ -457,13 +457,13 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
             holder.addCallback(this)
             setWillNotDraw(false) // Ensure onDraw is called
         }
-        
+
         fun setDetections(newDetections: List<ImageAnalyzer.Detection>) {
             detections = newDetections
-            
+
             // Add debug logs
             Log.d(TAG, "Setting ${detections.size} detections to draw on preview size ${previewWidth}x${previewHeight}")
-            
+
             // Only log details if there are just a few detections
             if (detections.size <= 5) {
                 detections.forEachIndexed { index, detection ->
@@ -472,14 +472,14 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                           "${detection.boundingBox.width.format(3)}, ${detection.boundingBox.height.format(3)}]")
                 }
             }
-            
+
             // Force immediate redraw
             invalidate()
-            
+
             // Also draw on the surface if it's valid
             drawDetections()
         }
-        
+
         fun setPreviewSize(width: Int, height: Int) {
             Log.d(TAG, "BoxOverlay size set to ${width}x${height}")
             previewWidth = width
@@ -557,12 +557,17 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                 holder.unlockCanvasAndPost(canvas)
             }
         }
-        
-        // Draw outline showing the model's coordinate space mapped to screen space
         private fun drawModelAreaOutline(canvas: Canvas, paint: Paint) {
             val visibleModelRect = getVisibleModelRect()
-            
-            // Draw the outline
+
+            if (visibleModelRect.width() == 0 || visibleModelRect.height() == 0) {
+                Log.e(TAG, "Error: visibleModelRect has zero width or height!")
+                return
+            }
+
+            Log.d(TAG, "Drawing Model Area: Left=${visibleModelRect.left}, Top=${visibleModelRect.top}, Right=${visibleModelRect.right}, Bottom=${visibleModelRect.bottom}")
+
+            // Draw the outline rectangle
             canvas.drawRect(
                 visibleModelRect.left.toFloat(),
                 visibleModelRect.top.toFloat(),
@@ -570,105 +575,128 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                 visibleModelRect.bottom.toFloat(),
                 paint
             )
-            
-            // Add additional markers at corners for better debugging
-            val markerSize = 20f
-            
+
+            // Add debug marker lines
+            val markerSize = 40f  // Increased size for better visibility
+
             // Top-left marker
             canvas.drawLine(
-                visibleModelRect.left.toFloat(), 
+                visibleModelRect.left.toFloat(),
                 visibleModelRect.top.toFloat(),
                 visibleModelRect.left.toFloat() + markerSize,
                 visibleModelRect.top.toFloat(),
                 paint
             )
             canvas.drawLine(
-                visibleModelRect.left.toFloat(), 
+                visibleModelRect.left.toFloat(),
                 visibleModelRect.top.toFloat(),
                 visibleModelRect.left.toFloat(),
                 visibleModelRect.top.toFloat() + markerSize,
                 paint
             )
-            
+
+            // Bottom-right marker
+            canvas.drawLine(
+                visibleModelRect.right.toFloat(),
+                visibleModelRect.bottom.toFloat(),
+                visibleModelRect.right.toFloat() - markerSize,
+                visibleModelRect.bottom.toFloat(),
+                paint
+            )
+            canvas.drawLine(
+                visibleModelRect.right.toFloat(),
+                visibleModelRect.bottom.toFloat(),
+                visibleModelRect.right.toFloat(),
+                visibleModelRect.bottom.toFloat() - markerSize,
+                paint
+            )
+
             // Add dimensions text
             val dimensionsText = "${visibleModelRect.width()}x${visibleModelRect.height()}"
             debugPaint.color = Color.CYAN
+            debugPaint.textSize = 50f  // Make text more readable
             canvas.drawText(
                 dimensionsText,
-                visibleModelRect.left.toFloat() + 10,
-                visibleModelRect.top.toFloat() + 30,
+                visibleModelRect.left.toFloat() + 20,
+                visibleModelRect.top.toFloat() + 50,
                 debugPaint
             )
+
+            Log.d(TAG, "Model Area Drawn: $dimensionsText")
         }
-        
-        // Get the rectangle that represents the model's 640x640 space mapped to screen space
+
         private fun getModelToScreenRect(): Rect {
-            val previewAspectRatio = previewWidth.toFloat() / previewHeight.toFloat()
-            
-            if (previewAspectRatio > 1.0) {
-                // Preview is wider than tall - center horizontally
-                val effectiveWidth = previewHeight
-                val leftPadding = (previewWidth - effectiveWidth) / 2
-                return Rect(leftPadding, 0, leftPadding + effectiveWidth, previewHeight)
-            } else {
-                // Preview is taller than wide - center vertically
-                val effectiveHeight = previewWidth
-                val topPadding = (previewHeight - effectiveHeight) / 2
-                return Rect(0, topPadding, previewWidth, topPadding + effectiveHeight)
+            val screenWidth = previewWidth ?: 0
+            val screenHeight = previewHeight ?: 0
+
+            Log.d(TAG, "Preview Dimensions - Width: $screenWidth, Height: $screenHeight") // Log values
+
+            if (screenWidth == 0 || screenHeight == 0) {
+                Log.e(TAG, "Error: previewWidth or previewHeight is not initialized!")
+                return Rect(0, 0, 0, 0)
             }
+
+            val boxSize = if (screenWidth >= 640 && screenHeight >= 640) 640 else screenWidth.coerceAtMost(screenHeight)
+
+            val left = (screenWidth - boxSize) / 2
+            val top = (screenHeight - boxSize) / 2
+            val right = left + boxSize
+            val bottom = top + boxSize
+
+            val modelRect = Rect(left, top, right, bottom)
+
+            Log.d(TAG, "Updated Model Area: Left=${modelRect.left}, Top=${modelRect.top}, Right=${modelRect.right}, Bottom=${modelRect.bottom}, Size=${modelRect.width()}x${modelRect.height()}")
+
+            return modelRect
         }
-        
+
+
         private fun drawBoxForDetection(canvas: Canvas, detection: ImageAnalyzer.Detection) {
             try {
-                // Get the normalized coordinates (all in 0-1 range)
-                val centerX = detection.boundingBox.x
-                val centerY = detection.boundingBox.y
-                val width = detection.boundingBox.width
-                val height = detection.boundingBox.height
-                
-                // Log the normalized coordinates
-                Log.d(TAG, "Drawing box for detection: centerX=$centerX centerY=$centerY width=$width height=$height")
-                
-                // Get the visible model area within the preview
-                val visibleModelRect = getVisibleModelRect()
-                Log.d(TAG, "Visible model rect: $visibleModelRect")
-                
-                // IMPROVED COORDINATE MAPPING:
-                // The model coordinates come from a 640x640 square model where:
-                // - (0,0) is the top-left
-                // - (1,1) is the bottom-right
-                
-                // Map normalized model coordinates (0-1) directly to the visible model area
-                val screenX = visibleModelRect.left + (centerX * visibleModelRect.width())
-                val screenY = visibleModelRect.top + (centerY * visibleModelRect.height())
-                
-                // Scale the box dimensions proportionally
-                val screenWidth = width * visibleModelRect.width()
-                val screenHeight = height * visibleModelRect.height()
-                
-                // Ensure minimum box size for visibility (5% of the smaller screen dimension)
-                val minDimension = Math.min(previewWidth, previewHeight) * 0.05f
-                val finalWidth = Math.max(screenWidth, minDimension)
-                val finalHeight = Math.max(screenHeight, minDimension)
-                
+                // Extract normalized coordinates from detection (values between 0 and 1)
+                val normX = detection.boundingBox.x
+                val normY = detection.boundingBox.y
+                val normWidth = detection.boundingBox.width
+                val normHeight = detection.boundingBox.height
+
+
+
+                // Log the normalized values for debugging
+                Log.d(TAG, "Normalized detection: x=$normX, y=$normY, width=$normWidth, height=$normHeight")
+
+                // Get the mapped visible area from model coordinates to screen coordinates
+                val visibleModelRect = getModelToScreenRect()
+
+
+                // Convert normalized model coordinates (0-1) to screen space
+                val screenX = visibleModelRect.left + normX * visibleModelRect.width()
+                val screenY = visibleModelRect.top + normY * visibleModelRect.height()
+
+                // Scale the bounding box to screen dimensions
+                val screenWidth = normWidth * visibleModelRect.width()
+                val screenHeight = normHeight * visibleModelRect.height()
+
+                // Ensure the bounding box has a minimum size for visibility
+                val minBoxSize = Math.min(previewWidth, previewHeight) * 0.05f
+                val finalWidth = Math.max(screenWidth, minBoxSize)
+                val finalHeight = Math.max(screenHeight, minBoxSize)
+
                 // Calculate the box corners
                 var left = screenX - finalWidth / 2
                 var top = screenY - finalHeight / 2
                 var right = screenX + finalWidth / 2
                 var bottom = screenY + finalHeight / 2
-                
-                Log.d(TAG, "Box mapped to: left=$left, top=$top, right=$right, bottom=$bottom")
-                
-                // Handle mirroring for front camera
+
+                // Apply mirroring correction for front camera
                 if (isFrontCamera) {
-                    // For front camera, mirror horizontally around the center axis
                     val oldLeft = left
                     left = previewWidth - right
                     right = previewWidth - oldLeft
-                    Log.d(TAG, "After mirroring: left=$left, top=$top, right=$right, bottom=$bottom")
                 }
-                
-                // Set color based on acne type
+
+                Log.d(TAG, "Mapped box: left=$left, top=$top, right=$right, bottom=$bottom")
+
+                // Set bounding box color based on detected class
                 val boxColor = when {
                     detection.className.contains("comedone") -> Color.YELLOW
                     detection.className.contains("pustule") -> Color.RED
@@ -676,88 +704,31 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                     detection.className.contains("nodule") -> Color.GREEN
                     else -> Color.WHITE
                 }
-                
-                // Draw crosshair at the center point for better visualization
-                val crosshairSize = 40f
-                val crosshairPaint = Paint().apply {
-                    color = boxColor
-                    strokeWidth = 5f
-                    style = Paint.Style.STROKE
-                }
-                
-                // Draw the crosshair at the detection center
-                canvas.drawLine(
-                    screenX - crosshairSize, 
-                    screenY, 
-                    screenX + crosshairSize, 
-                    screenY, 
-                    crosshairPaint
-                )
-                canvas.drawLine(
-                    screenX, 
-                    screenY - crosshairSize, 
-                    screenX, 
-                    screenY + crosshairSize, 
-                    crosshairPaint
-                )
-                
-                // Make boxes more visible with increased width
+
+                // Draw bounding box with improved visibility
                 paint.color = boxColor
-                paint.strokeWidth = 8f
-                
-                // Draw the bounding box
+                paint.strokeWidth = 6f
+                paint.style = Paint.Style.STROKE
                 canvas.drawRect(left, top, right, bottom, paint)
-                
-                // Add class label with confidence percentage
+
+                // Draw label background
                 val labelText = "${detection.className} ${(detection.confidence * 100).toInt()}%"
-                
-                // Create background for text
-                textPaint.textSize = 46f
-                val textWidth = textPaint.measureText(labelText)
-                
-                // Background for label
-                backgroundPaint.color = Color.parseColor("#CC000000") // More opaque black
-                canvas.drawRect(
-                    left, 
-                    bottom, // Place label at bottom of box for better visibility
-                    left + textWidth + 20f, 
-                    bottom + 60f, 
-                    backgroundPaint
-                )
-                
+                textPaint.textSize = 20f
+                val textWidth = textPaint.measureText(labelText) + 20f
+                val textHeight = textPaint.textSize + 10f
+
+                backgroundPaint.color = Color.parseColor("#AA000000") // Semi-transparent black
+                canvas.drawRect(left, bottom, left + textWidth, bottom + textHeight, backgroundPaint)
+
                 // Draw label text
                 textPaint.color = Color.WHITE
-                canvas.drawText(
-                    labelText,
-                    left + 10f,
-                    bottom + 45f, // Align text inside the background
-                    textPaint
-                )
-                
-                // Draw coordinate debug info
-                val debugText = "[${centerX.format(2)},${centerY.format(2)}]"
-                backgroundPaint.color = Color.parseColor("#AA000000")
-                canvas.drawRect(
-                    left,
-                    bottom + 60f,
-                    left + textPaint.measureText(debugText) + 20,
-                    bottom + 100f,
-                    backgroundPaint
-                )
-                
-                debugPaint.color = Color.YELLOW
-                canvas.drawText(
-                    debugText,
-                    left + 10,
-                    bottom + 90f,
-                    debugPaint
-                )
-                
+                canvas.drawText(labelText, left + 10f, bottom + textHeight - 10f, textPaint)
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error drawing detection box: ${e.message}")
             }
         }
-        
+
         // Add this new method to calculate the visible rectangle of the model's coordinate space
         private fun getVisibleModelRect(): Rect {
             val previewAspectRatio = previewWidth.toFloat() / previewHeight.toFloat()

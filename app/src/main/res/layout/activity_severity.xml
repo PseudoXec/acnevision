@@ -11,7 +11,8 @@
         android:id="@+id/title_severity"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Severity\nGrading"
+        android:text="Acne\nAnalysis"
+        android:textAlignment="center"
         android:textColor="@color/blue"
         android:textSize="50sp"
         android:textStyle="bold"
@@ -25,9 +26,9 @@
         android:id="@+id/subtitle_severity"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Choose Input Option"
+        android:text="Choose Image Source"
         android:textColor="@color/gray"
-        android:textSize="15sp"
+        android:textSize="18sp"
         android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
@@ -35,32 +36,55 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.42" />
 
+    <!-- Camera Button -->
+
+    <!-- Information Text -->
     <Button
         android:id="@+id/realtime_severity"
-        android:layout_width="161dp"
-        android:layout_height="51dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
         android:backgroundTint="@color/blue"
-        android:text="Open Camera"
-        app:layout_constraintBottom_toBottomOf="parent"
+        android:padding="16dp"
+
+        android:text="Capture with Camera"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.518"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_bias="0.514" />
+        app:layout_constraintTop_toBottomOf="@+id/subtitle_severity" />
 
     <Button
         android:id="@+id/storage_severity"
-        android:layout_width="161dp"
-        android:layout_height="51dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
         android:backgroundTint="@color/blue"
-        android:text="Device Storage"
-
-        app:layout_constraintBottom_toBottomOf="parent"
+        android:padding="16dp"
+        android:text="Select from Gallery"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.518"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_bias="0.608" />
+        app:layout_constraintTop_toBottomOf="@+id/realtime_severity" />
 
+    <TextView
+        android:id="@+id/info_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="32dp"
+        android:text="You'll need to provide images of 5 facial regions: forehead, nose, left cheek, right cheek, and chin."
+        android:textAlignment="center"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.0"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/storage_severity" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

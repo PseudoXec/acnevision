@@ -9,35 +9,42 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
-import android.view.LayoutInflater
+import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.toBitmap
-import com.example.pytorchimplement.databinding.ActivityCaptureActivityBinding
-import com.example.pytorchimplement.databinding.ItemFacialRegionBinding
 import java.io.ByteArrayOutputStream
 
 class CaptureActivity : AppCompatActivity() {
 
-    // View binding
-    private lateinit var binding: ActivityCaptureActivityBinding
+    private val TAG = "CaptureActivity"
 
-    // Region data 
+    // Region data structure
     private data class FacialRegion(
         val id: String,
         val displayName: String,
-        val binding: ItemFacialRegionBinding
+        val imageView: ImageView,
+        val button: Button,
+        val placeholder: TextView
     )
     
+    // Map of regions
     private val regions = mutableMapOf<String, FacialRegion>()
-    private var capturedImages = mutableMapOf<String, Bitmap?>()
-    private var currentCaptureKey: String? = null
+    
+    // Map to store captured images
+    private val capturedImages = mutableMapOf<String, Bitmap?>()
+    
+    // Current region being captured
+    private var currentRegion: String? = null
+    
+    // Proceed button
+    private lateinit var proceedButton: Button
     
     // Flag to detect if running on an emulator (for testing)
     private val isEmulator: Boolean by lazy {
@@ -66,7 +73,7 @@ class CaptureActivity : AppCompatActivity() {
     ) { isGranted: Boolean ->
         if (isGranted) {
             // Permission granted, proceed with camera
-            currentCaptureKey?.let { launchCamera(it) }
+            currentRegion?.let { launchCamera(it) }
         } else {
             // Permission denied
             Toast.makeText(
@@ -81,44 +88,110 @@ class CaptureActivity : AppCompatActivity() {
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val imageBitmap = result.data?.extras?.get("data") as? Bitmap
-            if (imageBitmap != null && currentCaptureKey != null) {
-                capturedImages[currentCaptureKey!!] = imageBitmap
-                updateImageView(currentCaptureKey!!, imageBitmap)
+            if (imageBitmap != null && currentRegion != null) {
+                // Resize bitmap if needed (to reduce memory usage)
+                val resizedBitmap = resizeBitmapIfNeeded(imageBitmap, 640, 640)
+                
+                // Store the captured image
+                capturedImages[currentRegion!!] = resizedBitmap
+                
+                // Update the UI
+                updateRegionUI(currentRegion!!, resizedBitmap)
+                
+                // Show success message
+                Toast.makeText(
+                    this,
+                    "Image captured for ${getRegionDisplayName(currentRegion!!)}",
+                    Toast.LENGTH_SHORT
+                ).show()
+                
+                // Update proceed button state
+                updateProceedButtonState()
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityCaptureActivityBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_capture_activity)
 
+        // Initialize proceed button
+        proceedButton = findViewById(R.id.done_capture_button)
+        proceedButton.isEnabled = false
+        
         // Initialize facial regions
-        setupFacialRegion("forehead", "Forehead Region", binding.foreheadRegion)
-        setupFacialRegion("nose", "Nose Region", binding.noseRegion)
-        setupFacialRegion("right_cheek", "Right Cheek Region", binding.rightCheekRegion)
-        setupFacialRegion("left_cheek", "Left Cheek Region", binding.leftCheekRegion)
-        setupFacialRegion("chin", "Chin Region", binding.chinRegion)
+        setupFacialRegion(
+            "forehead",
+            findViewById(R.id.forehead_region_image),
+            findViewById(R.id.forehead_region_button),
+            findViewById(R.id.forehead_placeholder)
+        )
+        
+        setupFacialRegion(
+            "nose",
+            findViewById(R.id.nose_region_image),
+            findViewById(R.id.nose_region_button),
+            findViewById(R.id.nose_placeholder)
+        )
+        
+        setupFacialRegion(
+            "left_cheek",
+            findViewById(R.id.left_cheek_region_image),
+            findViewById(R.id.left_cheek_region_button),
+            findViewById(R.id.left_cheek_placeholder)
+        )
+        
+        setupFacialRegion(
+            "right_cheek",
+            findViewById(R.id.right_cheek_region_image),
+            findViewById(R.id.right_cheek_region_button),
+            findViewById(R.id.right_cheek_placeholder)
+        )
+        
+        setupFacialRegion(
+            "chin",
+            findViewById(R.id.chin_region_image),
+            findViewById(R.id.chin_region_button),
+            findViewById(R.id.chin_placeholder)
+        )
 
-        // Initialize "Done" button
-        binding.doneCaptureButton.setOnClickListener { processCapturedImages() }
+        // Set up "Proceed" button
+        proceedButton.setOnClickListener { processCapturedImages() }
+        
+        // Show initial instructions
+        Toast.makeText(
+            this,
+            "Capture images for all facial regions",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     // Setup a facial region with its views and listeners
-    private fun setupFacialRegion(regionId: String, displayName: String, regionBinding: ItemFacialRegionBinding) {
-        // Setup button text
-        regionBinding.captureButton.text = displayName
+    private fun setupFacialRegion(
+        regionId: String,
+        imageView: ImageView,
+        button: Button,
+        placeholder: TextView
+    ) {
+        // Get display name
+        val displayName = getRegionDisplayName(regionId)
         
         // Store region info
-        regions[regionId] = FacialRegion(regionId, displayName, regionBinding)
+        regions[regionId] = FacialRegion(
+            id = regionId,
+            displayName = displayName,
+            imageView = imageView,
+            button = button,
+            placeholder = placeholder
+        )
         
         // Set click listener
-        regionBinding.captureButton.setOnClickListener { openCamera(regionId) }
+        button.setOnClickListener { openCamera(regionId) }
     }
 
     // Check and request camera permission
     private fun openCamera(region: String) {
-        currentCaptureKey = region
+        currentRegion = region
         
         when {
             // Permission already granted
@@ -202,24 +275,53 @@ class CaptureActivity : AppCompatActivity() {
         
         // Save and display the test image
         capturedImages[region] = bitmap
-        updateImageView(region, bitmap)
+        updateRegionUI(region, bitmap)
+        
+        // Update proceed button state
+        updateProceedButtonState()
         
         Toast.makeText(
             this,
-            "Using test image for $region",
+            "Using test image for ${getRegionDisplayName(region)}",
             Toast.LENGTH_SHORT
         ).show()
     }
 
-    // Update ImageView Based on Region
-    private fun updateImageView(region: String, bitmap: Bitmap) {
-        regions[region]?.binding?.regionImage?.setImageBitmap(bitmap)
+    // Update UI for a region after capturing an image
+    private fun updateRegionUI(region: String, bitmap: Bitmap) {
+        val facialRegion = regions[region] ?: return
+        
+        // Update image view
+        facialRegion.imageView.setImageBitmap(bitmap)
+        
+        // Hide placeholder text
+        facialRegion.placeholder.visibility = View.GONE
+        
+        // Update button text
+        facialRegion.button.text = "Retake ${facialRegion.displayName}"
+    }
+    
+    // Update the proceed button state based on captured images
+    private fun updateProceedButtonState() {
+        // Enable the proceed button if all regions have been captured
+        val allCaptured = regions.keys.all { capturedImages.containsKey(it) }
+        
+        proceedButton.isEnabled = allCaptured
+        
+        if (proceedButton.isEnabled) {
+            proceedButton.setBackgroundColor(resources.getColor(R.color.green, theme))
+            Toast.makeText(
+                this,
+                "All regions captured! You can now proceed to analysis.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     // Convert Bitmap to ByteArray
     private fun bitmapToByteArray(bitmap: Bitmap): ByteArray {
         val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
         return stream.toByteArray()
     }
 
@@ -239,5 +341,40 @@ class CaptureActivity : AppCompatActivity() {
         } else {
             Toast.makeText(this, "Please capture all 5 images before proceeding!", Toast.LENGTH_LONG).show()
         }
+    }
+    
+    // Helper function to get display name for a region
+    private fun getRegionDisplayName(regionId: String): String {
+        return when (regionId) {
+            "forehead" -> "Forehead"
+            "nose" -> "Nose"
+            "left_cheek" -> "Left Cheek"
+            "right_cheek" -> "Right Cheek"
+            "chin" -> "Chin"
+            else -> regionId.capitalize()
+        }
+    }
+    
+    // Resize bitmap if needed to reduce memory usage
+    private fun resizeBitmapIfNeeded(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        
+        // Check if resize is needed
+        if (width <= maxWidth && height <= maxHeight) {
+            return bitmap
+        }
+        
+        // Calculate new dimensions while maintaining aspect ratio
+        val ratio = Math.min(
+            maxWidth.toFloat() / width.toFloat(),
+            maxHeight.toFloat() / height.toFloat()
+        )
+        
+        val newWidth = (width * ratio).toInt()
+        val newHeight = (height * ratio).toInt()
+        
+        // Resize the bitmap
+        return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
     }
 }

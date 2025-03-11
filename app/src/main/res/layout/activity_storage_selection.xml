@@ -1,24 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<ScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    tools:context=".StorageSelectionActivity">
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="16dp"
-        tools:context=".CaptureActivity">
+        android:padding="16dp">
 
         <TextView
-            android:id="@+id/capture_title"
+            android:id="@+id/selection_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Capture Face Regions"
+            android:text="Select Face Regions"
             android:textAlignment="center"
             android:textColor="@color/blue"
             android:textSize="24sp"
@@ -28,16 +26,16 @@
             app:layout_constraintTop_toTopOf="parent" />
 
         <TextView
-            android:id="@+id/capture_subtitle"
+            android:id="@+id/selection_subtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Take a photo of each facial region with your camera"
+            android:text="Select an image for each facial region from your gallery"
             android:textAlignment="center"
             android:textSize="16sp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/capture_title" />
+            app:layout_constraintTop_toBottomOf="@id/selection_title" />
 
         <!-- Forehead Region -->
         <androidx.cardview.widget.CardView
@@ -49,7 +47,7 @@
             app:cardElevation="4dp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/capture_subtitle">
+            app:layout_constraintTop_toBottomOf="@id/selection_subtitle">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -64,35 +62,23 @@
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
-                <FrameLayout
+                <ImageView
+                    android:id="@+id/forehead_image"
                     android:layout_width="match_parent"
                     android:layout_height="150dp"
                     android:layout_marginTop="8dp"
-                    android:background="#EEEEEE">
-
-                    <ImageView
-                        android:id="@+id/forehead_region_image"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:contentDescription="Forehead image"
-                        android:scaleType="centerCrop" />
-
-                    <TextView
-                        android:id="@+id/forehead_placeholder"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"
-                        android:text="No image captured"
-                        android:textColor="#888888" />
-                </FrameLayout>
+                    android:background="#EEEEEE"
+                    android:contentDescription="Forehead image"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_launcher_foreground" />
 
                 <Button
-                    android:id="@+id/forehead_region_button"
+                    android:id="@+id/forehead_button"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:backgroundTint="@color/blue"
-                    android:text="Capture Forehead"
+                    android:text="Select Forehead Image"
                     android:textColor="@android:color/white" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
@@ -122,35 +108,23 @@
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
-                <FrameLayout
+                <ImageView
+                    android:id="@+id/nose_image"
                     android:layout_width="match_parent"
                     android:layout_height="150dp"
                     android:layout_marginTop="8dp"
-                    android:background="#EEEEEE">
-
-                    <ImageView
-                        android:id="@+id/nose_region_image"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:contentDescription="Nose image"
-                        android:scaleType="centerCrop" />
-
-                    <TextView
-                        android:id="@+id/nose_placeholder"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"
-                        android:text="No image captured"
-                        android:textColor="#888888" />
-                </FrameLayout>
+                    android:background="#EEEEEE"
+                    android:contentDescription="Nose image"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_launcher_foreground" />
 
                 <Button
-                    android:id="@+id/nose_region_button"
+                    android:id="@+id/nose_button"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:backgroundTint="@color/blue"
-                    android:text="Capture Nose"
+                    android:text="Select Nose Image"
                     android:textColor="@android:color/white" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
@@ -180,35 +154,23 @@
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
-                <FrameLayout
+                <ImageView
+                    android:id="@+id/left_cheek_image"
                     android:layout_width="match_parent"
                     android:layout_height="150dp"
                     android:layout_marginTop="8dp"
-                    android:background="#EEEEEE">
-
-                    <ImageView
-                        android:id="@+id/left_cheek_region_image"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:contentDescription="Left cheek image"
-                        android:scaleType="centerCrop" />
-
-                    <TextView
-                        android:id="@+id/left_cheek_placeholder"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"
-                        android:text="No image captured"
-                        android:textColor="#888888" />
-                </FrameLayout>
+                    android:background="#EEEEEE"
+                    android:contentDescription="Left cheek image"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_launcher_foreground" />
 
                 <Button
-                    android:id="@+id/left_cheek_region_button"
+                    android:id="@+id/left_cheek_button"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:backgroundTint="@color/blue"
-                    android:text="Capture Left Cheek"
+                    android:text="Select Left Cheek Image"
                     android:textColor="@android:color/white" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
@@ -238,35 +200,23 @@
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
-                <FrameLayout
+                <ImageView
+                    android:id="@+id/right_cheek_image"
                     android:layout_width="match_parent"
                     android:layout_height="150dp"
                     android:layout_marginTop="8dp"
-                    android:background="#EEEEEE">
-
-                    <ImageView
-                        android:id="@+id/right_cheek_region_image"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:contentDescription="Right cheek image"
-                        android:scaleType="centerCrop" />
-
-                    <TextView
-                        android:id="@+id/right_cheek_placeholder"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"
-                        android:text="No image captured"
-                        android:textColor="#888888" />
-                </FrameLayout>
+                    android:background="#EEEEEE"
+                    android:contentDescription="Right cheek image"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_launcher_foreground" />
 
                 <Button
-                    android:id="@+id/right_cheek_region_button"
+                    android:id="@+id/right_cheek_button"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:backgroundTint="@color/blue"
-                    android:text="Capture Right Cheek"
+                    android:text="Select Right Cheek Image"
                     android:textColor="@android:color/white" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
@@ -296,41 +246,30 @@
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
-                <FrameLayout
+                <ImageView
+                    android:id="@+id/chin_image"
                     android:layout_width="match_parent"
                     android:layout_height="150dp"
                     android:layout_marginTop="8dp"
-                    android:background="#EEEEEE">
-
-                    <ImageView
-                        android:id="@+id/chin_region_image"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:contentDescription="Chin image"
-                        android:scaleType="centerCrop" />
-
-                    <TextView
-                        android:id="@+id/chin_placeholder"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"
-                        android:text="No image captured"
-                        android:textColor="#888888" />
-                </FrameLayout>
+                    android:background="#EEEEEE"
+                    android:contentDescription="Chin image"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_launcher_foreground" />
 
                 <Button
-                    android:id="@+id/chin_region_button"
+                    android:id="@+id/chin_button"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:backgroundTint="@color/blue"
-                    android:text="Capture Chin"
+                    android:text="Select Chin Image"
                     android:textColor="@android:color/white" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
+        <!-- Proceed Button -->
         <Button
-            android:id="@+id/done_capture_button"
+            android:id="@+id/proceed_button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
@@ -340,11 +279,10 @@
             android:text="Proceed to Analysis"
             android:textColor="@android:color/white"
             android:textSize="18sp"
-            android:enabled="false"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/chin_card" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
-</ScrollView>
+</ScrollView> 

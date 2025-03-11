@@ -24,11 +24,11 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
-        <!-- Image Card -->
+        <!-- Region ViewPager Card -->
         <androidx.cardview.widget.CardView
-            android:id="@+id/image_card"
+            android:id="@+id/regions_card"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="300dp"
             android:layout_marginTop="16dp"
             app:cardCornerRadius="10dp"
             app:cardElevation="4dp"
@@ -38,25 +38,23 @@
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="8dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Analyzed Image"
+                    android:layout_gravity="center_horizontal"
+                    android:text="Facial Regions"
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
-                <ImageView
-                    android:id="@+id/result_image"
+                <androidx.viewpager2.widget.ViewPager2
+                    android:id="@+id/region_view_pager"
                     android:layout_width="match_parent"
-                    android:layout_height="200dp"
-                    android:layout_marginTop="8dp"
-                    android:contentDescription="Analyzed facial region"
-                    android:scaleType="fitCenter"
-                    tools:src="@android:drawable/ic_menu_gallery" />
+                    android:layout_height="match_parent"
+                    android:layout_marginTop="8dp" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
@@ -69,7 +67,7 @@
             app:cardElevation="4dp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/image_card">
+            app:layout_constraintTop_toBottomOf="@id/regions_card">
 
             <LinearLayout
                 android:layout_width="match_parent"

@@ -28,14 +28,19 @@ class GAGSCalculator {
         CHIN(1)
     }
 
+    // Update region boundary calculations with better face proportions
+    private val FACE_CENTER_X = 0.5f
+    private val FACE_CENTER_Y = 0.45f  // Adjusted to account for typical face positioning
+    private val REGION_SCALE = 0.9f    // Increased to cover more of the detection area
+
     // Approximate coordinates for face regions (normalized 0-1)
-    // These boundaries need to be calibrated based on the actual face detection
+    // These boundaries are calibrated for the square guide frame
     private val regionBoundaries = mapOf(
-        FaceRegion.FOREHEAD to RectF(0.2f, 0.0f, 0.8f, 0.33f),
-        FaceRegion.RIGHT_CHEEK to RectF(0.0f, 0.33f, 0.4f, 0.7f),
-        FaceRegion.LEFT_CHEEK to RectF(0.6f, 0.33f, 1.0f, 0.7f),
-        FaceRegion.NOSE to RectF(0.4f, 0.33f, 0.6f, 0.7f),
-        FaceRegion.CHIN to RectF(0.3f, 0.7f, 0.7f, 1.0f)
+        FaceRegion.FOREHEAD to RectF(0.25f, 0.0f, 0.75f, 0.33f),
+        FaceRegion.RIGHT_CHEEK to RectF(0.0f, 0.33f, 0.35f, 0.7f),
+        FaceRegion.LEFT_CHEEK to RectF(0.65f, 0.33f, 1.0f, 0.7f),
+        FaceRegion.NOSE to RectF(0.35f, 0.33f, 0.65f, 0.7f),
+        FaceRegion.CHIN to RectF(0.25f, 0.7f, 0.75f, 1.0f)
     )
 
     /**
@@ -55,11 +60,44 @@ class GAGSCalculator {
      * Determines which face region a detection belongs to based on its coordinates
      */
     private fun determineRegion(centerX: Float, centerY: Float): FaceRegion? {
+        // Apply adjustments to account for face positioning in the frame
+        val adjustedX = (centerX - FACE_CENTER_X) * REGION_SCALE + FACE_CENTER_X
+        val adjustedY = (centerY - FACE_CENTER_Y) * REGION_SCALE + FACE_CENTER_Y
+        
         regionBoundaries.forEach { (region, bounds) ->
-            if (bounds.contains(centerX, centerY)) {
+            if (bounds.contains(adjustedX, adjustedY)) {
                 return region
             }
         }
+        
+        // If detection is outside defined regions but still within reasonable bounds,
+        // assign to the closest region based on simple distance calculation
+        if (adjustedX >= 0 && adjustedX <= 1 && adjustedY >= 0 && adjustedY <= 1) {
+            var closestRegion: FaceRegion? = null
+            var minDistance = Float.MAX_VALUE
+            
+            regionBoundaries.forEach { (region, bounds) ->
+                // Calculate distance to region center
+                val regionCenterX = (bounds.left + bounds.right) / 2
+                val regionCenterY = (bounds.top + bounds.bottom) / 2
+                val distance = Math.sqrt(
+                    Math.pow((adjustedX - regionCenterX).toDouble(), 2.0) +
+                    Math.pow((adjustedY - regionCenterY).toDouble(), 2.0)
+                ).toFloat()
+                
+                if (distance < minDistance) {
+                    minDistance = distance
+                    closestRegion = region
+                }
+            }
+            
+            if (closestRegion != null) {
+                Log.d(TAG, "Detection at ($centerX, $centerY) assigned to closest region: ${closestRegion!!.name}")
+                return closestRegion
+            }
+        }
+        
+        Log.d(TAG, "Detection at ($centerX, $centerY) couldn't be assigned to a region")
         return null
     }
 

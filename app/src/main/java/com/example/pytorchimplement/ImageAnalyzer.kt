@@ -4,7 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.YuvImage
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
@@ -31,6 +33,9 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     // Model dimensions - must match what's set in RealTimeActivity
     private val MODEL_WIDTH = 640
     private val MODEL_HEIGHT = 640
+
+    // Model Name - Change this to the name of the model you are using
+    private val MODEL_NAME = "v9s-10e.onnx"
 
     // Camera preview dimensions - will be updated dynamically
     private var previewWidth = 0
@@ -103,8 +108,6 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     private var ortEnvironment: OrtEnvironment? = null
     private var ortSession: OrtSession? = null
     
-    // Model config
-    private val modelFileName = "yolov9.onnx"
     
     // Model input dimensions
     private var inputWidth = 640
@@ -113,6 +116,18 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     
     // Track the last set of detections for GAGS calculation
     private var lastDetections: List<Detection>? = null
+    
+    // Update detection filtering parameters
+    private val MIN_CONFIDENCE = 0.15f  // Lowered to catch more potential detections
+    private val NMS_THRESHOLD = 0.4f    // Adjusted from 0.5
+    private val MIN_BOX_SIZE = 0.02f    // Minimum box size for visibility
+
+    // Guide box information (normalized 0-1 coordinates)
+    private var guideBoxX = 0f
+    private var guideBoxY = 0f
+    private var guideBoxWidth = 1f
+    private var guideBoxHeight = 1f
+    private var useGuideBoxOnly = true  // Set to true to only analyze the guide box area
     
     init {
         loadModel()
@@ -124,7 +139,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             ortEnvironment = OrtEnvironment.getEnvironment()
             
             // Load the model from assets
-            val modelBytes = context.assets.open(modelFileName).readBytes()
+            val modelBytes = context.assets.open(MODEL_NAME).readBytes()
             
             // Create session options
             val sessionOptions = OrtSession.SessionOptions()
@@ -133,7 +148,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             // Create inference session
             ortSession = ortEnvironment?.createSession(modelBytes, sessionOptions)
             
-            Log.d(TAG, "ONNX model loaded successfully: $modelFileName")
+            Log.d(TAG, "ONNX model loaded successfully: $MODEL_NAME")
             
             // Get input information
             ortSession?.let { session ->
@@ -256,57 +271,59 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
         }
     }
     
-    private fun runInference(bitmap: Bitmap, cameraOrientation: Int = 0): AnalysisResult {
+    private fun runInference(bitmap: Bitmap, rotation: Int): AnalysisResult {
+        // Rotate bitmap first if needed
+        val rotatedBitmap = rotateBitmap(bitmap, rotation)
+        
+        // If guide box is set and useGuideBoxOnly is true, crop to the guide box area
+        val processedBitmap = if (useGuideBoxOnly && guideBoxWidth > 0 && guideBoxHeight > 0) {
+            // Calculate pixel coordinates of guide box
+            val x = (guideBoxX * rotatedBitmap.width).toInt()
+            val y = (guideBoxY * rotatedBitmap.height).toInt()
+            val width = (guideBoxWidth * rotatedBitmap.width).toInt()
+            val height = (guideBoxHeight * rotatedBitmap.height).toInt()
+            
+            // Ensure coordinates are valid
+            val safeX = x.coerceIn(0, rotatedBitmap.width - 1)
+            val safeY = y.coerceIn(0, rotatedBitmap.height - 1)
+            val safeWidth = width.coerceIn(1, rotatedBitmap.width - safeX)
+            val safeHeight = height.coerceIn(1, rotatedBitmap.height - safeY)
+            
+            Log.d(TAG, "Cropping to guide box: x=$safeX, y=$safeY, width=$safeWidth, height=$safeHeight")
+            
+            // Crop to guide box area
+            try {
+                Bitmap.createBitmap(rotatedBitmap, safeX, safeY, safeWidth, safeHeight)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cropping bitmap: ${e.message}")
+                rotatedBitmap // Fallback to full image if cropping fails
+            }
+        } else {
+            rotatedBitmap
+        }
+        
+        // Resize to model input size
+        val modelInput = if (processedBitmap.width != MODEL_WIDTH || processedBitmap.height != MODEL_HEIGHT) {
+            Bitmap.createScaledBitmap(processedBitmap, MODEL_WIDTH, MODEL_HEIGHT, true)
+        } else {
+            processedBitmap
+        }
+        
+        // Run inference on modelInput
         val ortEnv = ortEnvironment ?: throw IllegalStateException("ORT environment is null")
         val ortSession = ortSession ?: throw IllegalStateException("ORT session is null")
         
         try {
-            // Track all transformations for accurate coordinate mapping
-            var sourceWidth = bitmap.width
-            var sourceHeight = bitmap.height
-            
             // Record original dimensions for mapping coordinates back
-            val originalWidth = bitmap.width
-            val originalHeight = bitmap.height
+            val originalWidth = modelInput.width
+            val originalHeight = modelInput.height
             Log.d(TAG, "Original image dimensions: $originalWidth x $originalHeight")
             
-            // Apply rotation to bitmap if needed based on camera orientation
-            var rotatedBitmap = bitmap
-            var rotationApplied = false
-            
-            if (cameraOrientation > 0) {
-                Log.d(TAG, "Rotating input image by $cameraOrientation degrees to match model expectations")
-                val matrix = android.graphics.Matrix()
-                matrix.postRotate(cameraOrientation.toFloat())
-                rotatedBitmap = Bitmap.createBitmap(
-                    bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
-                )
-                sourceWidth = rotatedBitmap.width
-                sourceHeight = rotatedBitmap.height
-                rotationApplied = true
-                Log.d(TAG, "Image rotated from ${bitmap.width}x${bitmap.height} to ${sourceWidth}x${sourceHeight}")
-            }
-            
-            // Calculate scale factors and padding for letterboxing/pillarboxing
-            // This is critical for accurate coordinate translation
-            val scaleFactorWidth = MODEL_WIDTH.toFloat() / sourceWidth
-            val scaleFactorHeight = MODEL_HEIGHT.toFloat() / sourceHeight
-            
-            // Choose the scaling method based on aspect ratio
-            val scaleFactor = minOf(scaleFactorWidth, scaleFactorHeight)
-            
-            // Calculate padding to center the image
-            val paddingX = if (scaleFactorWidth > scaleFactorHeight) {
-                (MODEL_WIDTH - (sourceWidth * scaleFactor)) / 2
-            } else {
-                0f
-            }
-            
-            val paddingY = if (scaleFactorHeight > scaleFactorWidth) {
-                (MODEL_HEIGHT - (sourceHeight * scaleFactor)) / 2
-            } else {
-                0f
-            }
+            // Since we're using a square input that matches the model dimensions,
+            // we don't need letterboxing/pillarboxing
+            val scaleFactor = 1.0f
+            val paddingX = 0.0f
+            val paddingY = 0.0f
             
             Log.d(TAG, "Letterboxing: scale=$scaleFactor, paddingX=$paddingX, paddingY=$paddingY")
             
@@ -314,7 +331,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             val transformParams = TransformationParams(
                 originalWidth = originalWidth,
                 originalHeight = originalHeight,
-                rotationDegrees = cameraOrientation,
+                rotationDegrees = 0, // We've already rotated the bitmap
                 scaleFactor = scaleFactor,
                 paddingX = paddingX,
                 paddingY = paddingY,
@@ -324,16 +341,8 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
                 previewHeight = previewHeight
             )
             
-            // Resize bitmap to expected input size
-            val resizedBitmap = if (rotatedBitmap.width != inputWidth || rotatedBitmap.height != inputHeight) {
-                Log.d(TAG, "Resizing bitmap from ${rotatedBitmap.width}x${rotatedBitmap.height} to ${inputWidth}x${inputHeight}")
-                Bitmap.createScaledBitmap(rotatedBitmap, inputWidth, inputHeight, true)
-            } else {
-                rotatedBitmap
-            }
-            
             // Create input tensor
-            val inputBuffer = prepareInputBuffer(resizedBitmap)
+            val inputBuffer = prepareInputBuffer(modelInput)
             
             // Get input name (usually "images" for YOLOv9 models)
             val inputName = ortSession.inputInfo.keys.firstOrNull() ?: "images"
@@ -359,7 +368,15 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             inputTensor.close()
             output.close()
             
-            return result
+            // If we cropped to guide box, the coordinates are already relative to the guide box
+            // No need to adjust them further
+            
+            return AnalysisResult(
+                severity = calculateSeverityScore(result.acneCounts),
+                timestamp = System.currentTimeMillis(),
+                acneCounts = result.acneCounts,
+                detections = result.detections
+            )
             
         } catch (e: Exception) {
             Log.e(TAG, "Error during ONNX inference: ${e.message}")
@@ -438,12 +455,6 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             // Log all available output tensors for debugging
             val outputNames = output.map {o -> o.key}.joinToString()
             Log.d(TAG, "Available output tensors: ${outputNames}")
-            output.forEach { (name, tensor) ->
-                if (tensor is OnnxTensor) {
-                    val shape = tensor.info.shape
-                    Log.d(TAG, "Output tensor '$name': shape=${shape.contentToString()}")
-                }
-            }
             
             val classNames = mapOf(
                 0 to "comedone",
@@ -453,7 +464,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             )
             
             // Set appropriate confidence thresholds for the Roboflow model
-            val confidenceThreshold = 0.35f  // Increased from 0.20f to reduce false positives
+            val confidenceThreshold = 0.15f
             
             // Get the main output tensor - this model uses the key "output"
             val outputTensor = output.first { o -> o.key == "output"}.value as? OnnxTensor
@@ -469,18 +480,12 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             
             // Get the raw float data
             val rawData = outputTensor.floatBuffer
-            Log.d(TAG, "Raw data capacity: ${rawData.capacity()}")
-            
-            // Roboflow YOLOv9 model returns detections in the format shown from the Roboflow interface:
-            // Each detection has x, y, width, height, and class confidence values
-            // where x, y are center coordinates in pixel space (0-640)
             
             try {
                 // Based on the Roboflow screenshot, detections are in pixel coordinates
                 val detectionsList = mutableListOf<Detection>()
                 
                 // Parse the output tensor based on YOLOv9 format
-                // The output shape is typically [1, boxes, coordinates+classes]
                 if (shape.size >= 2) {
                     val numDetections = if (shape.size == 3) shape[2].toInt() else shape[1].toInt()
                     Log.d(TAG, "Processing $numDetections possible detections")
@@ -493,11 +498,6 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
                     
                     // Process each potential detection
                     for (i in 0 until numDetections) {
-                        // Get the coordinates and confidence
-                        // Based on the Roboflow output format:
-                        // - Coordinates are in pixel space (0-640)
-                        // - The format appears to be: x, y, width, height, class_scores[...]
-                        
                         try {
                             if (shape.size == 3 && shape[1].toInt() == 8) {
                                 // Format: [1, 8, num_detections] where:
@@ -565,10 +565,6 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
                                     acneCounts[className] = acneCounts[className]!! + 1
                                     validCount++
                                 }
-                            } else {
-                                // For other formats, extract the model's predictions directly
-                                // This is a fallback for different output shapes
-                                Log.w(TAG, "Unsupported output shape: ${shape.contentToString()}")
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error processing detection $i: ${e.message}")
@@ -578,22 +574,21 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
                     Log.d(TAG, "Found $validCount valid detections after filtering")
                     
                     // Apply NMS to remove overlapping detections
-                    val finalDetections = applyNMS(detectionsList, 0.2f)
+                    val finalDetections = applyNMS(detectionsList, 0.4f)
                     Log.d(TAG, "After NMS: ${finalDetections.size} detections")
                     
                     detections.addAll(finalDetections)
-                } else {
-                    Log.e(TAG, "Unexpected output tensor shape: ${shape.contentToString()}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing model output: ${e.message}")
                 e.printStackTrace()
             }
             
+            // Simple severity score just for UI display
             val severity = calculateSeverityScore(acneCounts)
-            Log.d(TAG, "Analysis complete - Severity: $severity, Counts: $acneCounts, Total: ${acneCounts.values.sum()}")
+            Log.d(TAG, "Analysis complete - Counts: $acneCounts, Total: ${acneCounts.values.sum()}")
             
-            // Store detections for GAGS calculation
+            // Store detections
             setLastDetections(detections)
             
             return AnalysisResult(
@@ -620,36 +615,27 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     }
     
     private fun calculateSeverityScore(acneCounts: Map<String, Int>): Int {
-        // Use the GAGS methodology if we have detections with bounding boxes
-        if (lastDetections != null && lastDetections!!.isNotEmpty()) {
-            val gagsCalculator = GAGSCalculator()
-            return gagsCalculator.calculateGAGSScore(lastDetections!!)
-        }
-        
-        // Fallback to simple weighted calculation if no detections with bounding boxes
-        // Assign weights to different acne types (more severe types have higher weights)
-        val comedoneWeight = 1 // Mild
-        val pustuleWeight = 2  // Moderate
-        val papuleWeight = 3   // Moderately severe
-        val noduleWeight = 5   // Severe
-        
-        val weightedSum = 
-            (acneCounts["comedone"] ?: 0) * comedoneWeight +
-            (acneCounts["pustule"] ?: 0) * pustuleWeight +
-            (acneCounts["papule"] ?: 0) * papuleWeight +
-            (acneCounts["nodule"] ?: 0) * noduleWeight
-        
+        // Simple count-based severity - just for UI display purposes
+        // No complex weighting needed since we're just drawing bounding boxes
         val totalCount = acneCounts.values.sum()
         
-        // Normalize to 0-10 range
-        return if (totalCount > 0) {
-            (weightedSum.toFloat() / (totalCount * 3f) * 10).toInt().coerceIn(0, 10)
-        } else {
-            0
+        // Simple mapping of total count to a 0-10 scale
+        return when {
+            totalCount == 0 -> 0
+            totalCount <= 2 -> 1
+            totalCount <= 5 -> 2
+            totalCount <= 10 -> 3
+            totalCount <= 15 -> 4
+            totalCount <= 20 -> 5
+            totalCount <= 25 -> 6
+            totalCount <= 30 -> 7
+            totalCount <= 35 -> 8
+            totalCount <= 40 -> 9
+            else -> 10
         }
     }
     
-    // Update last detections when they're available
+    // Update last detections - simplified to just store them without GAGS calculation
     fun setLastDetections(detections: List<Detection>) {
         lastDetections = detections
     }
@@ -821,95 +807,82 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
         height: Float, 
         params: TransformationParams
     ): BoundingBox {
-        // First convert from model pixel space to the padded image space
-        // x, y, width, height are in model pixel coordinates (0-640)
+        // The model outputs coordinates relative to the 640x640 input
+        // We need to adjust for the fact that we're cropping to the guide box
         
-        // 1. Remove padding applied during letterboxing/pillarboxing
-        val unpaddedX = (x - params.paddingX) / params.scaleFactor
-        val unpaddedY = (y - params.paddingY) / params.scaleFactor
-        val unpaddedWidth = width / params.scaleFactor
-        val unpaddedHeight = height / params.scaleFactor
-        
-        // 2. Account for rotation if needed
-        var finalX = unpaddedX
-        var finalY = unpaddedY
-        
-        if (params.rotationDegrees > 0) {
-            // Coordinate transformation for rotation
-            // For 90-degree rotation
-            if (params.rotationDegrees == 90) {
-                finalX = params.originalHeight - unpaddedY
-                finalY = unpaddedX
-                Log.d(TAG, "Applied 90° rotation: ($unpaddedX,$unpaddedY) -> ($finalX,$finalY)")
-            } 
-            // For 180-degree rotation
-            else if (params.rotationDegrees == 180) {
-                finalX = params.originalWidth - unpaddedX
-                finalY = params.originalHeight - unpaddedY
-                Log.d(TAG, "Applied 180° rotation: ($unpaddedX,$unpaddedY) -> ($finalX,$finalY)")
-            }
-            // For 270-degree rotation
-            else if (params.rotationDegrees == 270) {
-                finalX = unpaddedY
-                finalY = params.originalWidth - unpaddedX
-                Log.d(TAG, "Applied 270° rotation: ($unpaddedX,$unpaddedY) -> ($finalX,$finalY)")
-            }
-        }
-        
-        // 3. Map from original image coordinates to preview coordinates
-        // Normalize to 0-1 range relative to the original image
-        val normalizedX = finalX / params.originalWidth
-        val normalizedY = finalY / params.originalHeight
-        val normalizedWidth = unpaddedWidth / params.originalWidth
-        val normalizedHeight = unpaddedHeight / params.originalHeight
+        // Normalize to 0-1 range based on model dimensions
+        val normalizedX = x / MODEL_WIDTH
+        val normalizedY = y / MODEL_HEIGHT
+        val normalizedWidth = width / MODEL_WIDTH
+        val normalizedHeight = height / MODEL_HEIGHT
         
         // Log transformation details for debugging
-        Log.d(TAG, "Coordinate mapping: model($x,$y,$width,$height) -> unpadded($unpaddedX,$unpaddedY,$unpaddedWidth,$unpaddedHeight) -> final($finalX,$finalY) -> normalized($normalizedX,$normalizedY,$normalizedWidth,$normalizedHeight)")
-        Log.d(TAG, "Transform params: rotation=${params.rotationDegrees}°, scale=${params.scaleFactor}, padding=[${params.paddingX},${params.paddingY}], preview=${params.previewWidth}x${params.previewHeight}")
+        Log.d(TAG, "Coordinate mapping: model($x,$y,$width,$height) -> normalized(${(normalizedX).format(3)},$normalizedY,$normalizedWidth,$normalizedHeight)")
         
-        return BoundingBox(normalizedX, normalizedY, normalizedWidth, normalizedHeight)
+        return BoundingBox(
+            x = normalizedX, 
+            y = normalizedY,
+            width = normalizedWidth,
+            height = normalizedHeight
+        )
     }
 
     // Apply class-specific adjustments to bounding box sizes without changing their positions
     private fun adjustBoundingBoxByClass(box: BoundingBox, className: String): BoundingBox {
+        // Minimum box size to ensure visibility (normalized coordinates)
+        val minBoxSize = 0.02f
+        
         // Size adjustment factors for each class
         val sizeAdjustment = when (className) {
-            "comedone" -> 0.9f  // Smaller - comedones are small and precise
+            "comedone" -> 1.0f  // Keep original size for comedones
             "pustule" -> 1.1f   // Slightly larger for pustules
             "papule" -> 1.2f    // Larger for papules
-            "nodule" -> 1.3f    // Much larger for nodules
+            "nodule" -> 1.4f    // Much larger for nodules
             else -> 1.0f
         }
         
         // Apply size adjustment without changing center position
-        val newWidth = (box.width * sizeAdjustment).coerceIn(0.01f, 1.0f)
-        val newHeight = (box.height * sizeAdjustment).coerceIn(0.01f, 1.0f)
-        
-        // Make sure the box stays within bounds
-        var newX = box.x
-        var newY = box.y
-        
-        // Adjust X if needed
-        if (newX - newWidth/2 < 0) {
-            newX = newWidth/2
-        } else if (newX + newWidth/2 > 1) {
-            newX = 1 - newWidth/2
-        }
-        
-        // Adjust Y if needed
-        if (newY - newHeight/2 < 0) {
-            newY = newHeight/2
-        } else if (newY + newHeight/2 > 1) {
-            newY = 1 - newHeight/2
-        }
+        val newWidth = Math.max(box.width * sizeAdjustment, minBoxSize)
+        val newHeight = Math.max(box.height * sizeAdjustment, minBoxSize)
         
         Log.d(TAG, "Adjusted $className box: ${box.width.format(2)}x${box.height.format(2)} -> ${newWidth.format(2)}x${newHeight.format(2)}")
         
         return BoundingBox(
-            x = newX,
-            y = newY,
+            x = box.x,
+            y = box.y,
             width = newWidth,
             height = newHeight
         )
+    }
+
+    // Add this helper function to rotate bitmaps if needed
+    private fun rotateBitmap(bitmap: Bitmap, rotation: Int): Bitmap {
+        return when (rotation) {
+            90 -> Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply {
+                postRotate(90f)
+            }, true)
+            180 -> Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply {
+                postRotate(180f)
+            }, true)
+            270 -> Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply {
+                postRotate(270f)
+            }, true)
+            else -> bitmap
+        }
+    }
+
+    /**
+     * Set the guide box information for cropping the image before analysis
+     * @param x Normalized X coordinate (0-1) of the guide box's left edge
+     * @param y Normalized Y coordinate (0-1) of the guide box's top edge
+     * @param width Normalized width (0-1) of the guide box
+     * @param height Normalized height (0-1) of the guide box
+     */
+    fun setGuideBoxInfo(x: Float, y: Float, width: Float, height: Float) {
+        guideBoxX = x
+        guideBoxY = y
+        guideBoxWidth = width
+        guideBoxHeight = height
+        Log.d(TAG, "Guide box set to: x=$x, y=$y, width=$width, height=$height")
     }
 }

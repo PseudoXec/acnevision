@@ -74,7 +74,8 @@ class PostScanImageAnalyzer(private val context: Context) {
         val acneCounts: Map<String, Int>,
         val detections: List<Detection>,
         val dominantAcneType: String,
-        val regionScore: Int
+        val regionScore: Int,
+        val inferenceTimeMs: Long
     )
 
     // Overall analysis result
@@ -83,7 +84,8 @@ class PostScanImageAnalyzer(private val context: Context) {
         val regionResults: Map<FacialRegion, RegionAnalysisResult>,
         val totalAcneCounts: Map<String, Int>,
         val totalGAGSScore: Int,
-        val severity: String
+        val severity: String,
+        val totalInferenceTimeMs: Long
     )
 
     init {
@@ -152,6 +154,7 @@ class PostScanImageAnalyzer(private val context: Context) {
             "nodule" to 0
         )
         var totalGAGSScore = 0
+        var totalInferenceTimeMs = 0L
         
         // Process each region
         FacialRegion.values().forEach { region ->
@@ -168,8 +171,12 @@ class PostScanImageAnalyzer(private val context: Context) {
                 // Add to total GAGS score
                 totalGAGSScore += result.regionScore
                 
+                // Add to total inference time
+                totalInferenceTimeMs += result.inferenceTimeMs
+                
                 Log.d(TAG, "Region ${region.displayName}: Score=${result.regionScore}, " +
-                        "Dominant=${result.dominantAcneType}, Counts=${result.acneCounts}")
+                        "Dominant=${result.dominantAcneType}, Counts=${result.acneCounts}, " +
+                        "Inference time=${result.inferenceTimeMs}ms")
             } else {
                 Log.e(TAG, "Missing image for region: ${region.displayName}")
             }
@@ -180,13 +187,15 @@ class PostScanImageAnalyzer(private val context: Context) {
         
         Log.d(TAG, "Total GAGS Score: $totalGAGSScore, Severity: $severity")
         Log.d(TAG, "Total Acne Counts: $totalAcneCounts")
+        Log.d(TAG, "Total inference time: ${totalInferenceTimeMs}ms")
         
         return AnalysisResult(
             timestamp = System.currentTimeMillis(),
             regionResults = regionResults,
             totalAcneCounts = totalAcneCounts,
             totalGAGSScore = totalGAGSScore,
-            severity = severity
+            severity = severity,
+            totalInferenceTimeMs = totalInferenceTimeMs
         )
     }
     
@@ -204,7 +213,8 @@ class PostScanImageAnalyzer(private val context: Context) {
             "nodule" to 0
         )
         
-        val detections = runInference(bitmap, region)
+        // Get detections and inference time
+        val (detections, inferenceTimeMs) = runInference(bitmap, region)
         
         // Count detections by type
         detections.forEach { detection ->
@@ -232,7 +242,8 @@ class PostScanImageAnalyzer(private val context: Context) {
             acneCounts = acneCounts,
             detections = detections,
             dominantAcneType = dominantAcne,
-            regionScore = regionScore
+            regionScore = regionScore,
+            inferenceTimeMs = inferenceTimeMs
         )
     }
     
@@ -242,8 +253,9 @@ class PostScanImageAnalyzer(private val context: Context) {
      * @param region The facial region this image represents
      * @return List of detections found in the image
      */
-    private fun runInference(bitmap: Bitmap, region: FacialRegion): List<Detection> {
+    private fun runInference(bitmap: Bitmap, region: FacialRegion): Pair<List<Detection>, Long> {
         val detections = mutableListOf<Detection>()
+        var inferenceTimeMs = 0L
         
         try {
             val ortEnv = ortEnvironment ?: throw IllegalStateException("ORT environment is null")
@@ -272,9 +284,12 @@ class PostScanImageAnalyzer(private val context: Context) {
             val inputs = HashMap<String, OnnxTensor>()
             inputs[inputName] = inputTensor
             
-            // Run inference
+            // Run inference and time it
             Log.d(TAG, "Running ONNX inference on ${region.displayName}")
+            val startTime = System.currentTimeMillis()
             val output = ortSession.run(inputs)
+            inferenceTimeMs = System.currentTimeMillis() - startTime
+            Log.d(TAG, "Inference completed in ${inferenceTimeMs}ms")
             
             // Process results
             val classNames = mapOf(
@@ -370,12 +385,12 @@ class PostScanImageAnalyzer(private val context: Context) {
             inputTensor.close()
             output.close()
             
-            return finalDetections
+            return Pair(finalDetections, inferenceTimeMs)
             
         } catch (e: Exception) {
             Log.e(TAG, "Error during inference: ${e.message}")
             e.printStackTrace()
-            return emptyList()
+            return Pair(emptyList(), inferenceTimeMs)
         }
     }
     

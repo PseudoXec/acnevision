@@ -23,6 +23,15 @@
             android:textColor="@color/blue"
             android:textSize="20sp"
             android:textStyle="bold" />
+        <TextView
+            android:id="@+id/region_inference_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFEB3B"
+            android:textSize="14sp"
+            android:layout_below="@id/region_title"
+            android:layout_marginTop="4dp"
+            android:text="Inference time: 0ms" />
 
         <FrameLayout
             android:id="@+id/region_container"

@@ -71,7 +71,8 @@ class ResultActivity : AppCompatActivity() {
         val regionId: String,
         val displayName: String,
         val bitmap: Bitmap,
-        val detections: List<Detection>
+        val detections: List<Detection>,
+        val inferenceTimeMs: Long
     )
     
     // Data class for detections
@@ -135,6 +136,9 @@ class ResultActivity : AppCompatActivity() {
         val papuleCount = intent.getIntExtra("papule_count", 0)
         val noduleCount = intent.getIntExtra("nodule_count", 0)
         
+        // Get the inference time from intent
+        val inferenceTime = intent.getLongExtra("inference_time", 0)
+        
         // Set severity text
         val severityText = String.format("Acne Severity: %s (Score: %d)", severity, totalScore)
         severityTextView.text = severityText
@@ -147,6 +151,7 @@ class ResultActivity : AppCompatActivity() {
         if (papuleCount > 0) summaryBuilder.append("• Papules: $papuleCount (${calculatePercentage(papuleCount, totalCount)}%)\n")
         if (noduleCount > 0) summaryBuilder.append("• Nodules: $noduleCount (${calculatePercentage(noduleCount, totalCount)}%)\n")
         summaryBuilder.append("\nTotal Acne Count: $totalCount")
+        summaryBuilder.append("\nInference Time: ${inferenceTime}ms")
         
         detailsTextView.text = summaryBuilder.toString()
         
@@ -227,15 +232,29 @@ class ResultActivity : AppCompatActivity() {
                     // Load detections
                     val detections = loadDetections(resultDir, regionId)
                     
+                    // Load inference time from summary file
+                    var inferenceTimeMs = 0L
+                    val summaryFile = File(resultDir, "${regionId}_summary.txt")
+                    if (summaryFile.exists()) {
+                        // Parse summary file to find inference time
+                        summaryFile.readLines().forEach { line ->
+                            if (line.contains("Inference Time:")) {
+                                val timeStr = line.substringAfter("Inference Time:").trim()
+                                inferenceTimeMs = timeStr.replace("ms", "").trim().toLongOrNull() ?: 0L
+                            }
+                        }
+                    }
+                    
                     // Add to list
                     regionDataList.add(RegionData(
                         regionId = regionId,
                         displayName = regionDisplayNames[regionId] ?: regionId,
                         bitmap = bitmap,
-                        detections = detections
+                        detections = detections,
+                        inferenceTimeMs = inferenceTimeMs
                     ))
                     
-                    Log.d(TAG, "Loaded region data for $regionId with ${detections.size} detections")
+                    Log.d(TAG, "Loaded region data for $regionId with ${detections.size} detections and ${inferenceTimeMs}ms inference time")
                 } else {
                     Log.e(TAG, "Image file not found for region: $regionId")
                 }
@@ -363,6 +382,7 @@ class ResultActivity : AppCompatActivity() {
             val regionTitle: TextView = itemView.findViewById(R.id.region_title)
             val regionImage: ImageView = itemView.findViewById(R.id.region_image)
             val regionContainer: FrameLayout = itemView.findViewById(R.id.region_container)
+            val regionInferenceTime: TextView = itemView.findViewById(R.id.region_inference_time)
         }
         
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RegionViewHolder {
@@ -376,6 +396,9 @@ class ResultActivity : AppCompatActivity() {
             
             // Set region title
             holder.regionTitle.text = regionData.displayName
+            
+            // Set inference time
+            holder.regionInferenceTime.text = "Inference time: ${regionData.inferenceTimeMs}ms"
             
             // Set region image
             holder.regionImage.setImageBitmap(regionData.bitmap)

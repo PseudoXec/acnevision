@@ -8,7 +8,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import android.content.Intent
 import android.view.View
-import android.widget.ProgressBar
+import android.widget.Button
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -17,11 +17,15 @@ import java.util.Locale
 
 class ModelInferenceActivity : AppCompatActivity() {
     private lateinit var resultTextView: TextView
-    private lateinit var progressBar: ProgressBar
     private lateinit var postScanImageAnalyzer: PostScanImageAnalyzer
+    private lateinit var retryButton: Button
     
     // Storage directory for analysis results
     private lateinit var storageDir: File
+    
+    // Add these variables to track progress
+    private var totalRegions = 5
+    private var processedRegions = 0
     
     companion object {
         private const val TAG = "ModelInferenceActivity"
@@ -33,7 +37,6 @@ class ModelInferenceActivity : AppCompatActivity() {
         setContentView(R.layout.activity_model_inference)
 
         resultTextView = findViewById(R.id.resultsTextView)
-        progressBar = findViewById(R.id.progressBar)
         
         // Initialize storage directory
         storageDir = File(getExternalFilesDir(null), RESULTS_DIR)
@@ -41,44 +44,59 @@ class ModelInferenceActivity : AppCompatActivity() {
             storageDir.mkdirs()
         }
         
-        // Clear old results if needed (optional)
-        // clearOldResults()
-        
         // Initialize the analyzer
         postScanImageAnalyzer = PostScanImageAnalyzer(this)
         
-        // Show progress
-        progressBar.visibility = View.VISIBLE
-        resultTextView.text = "Analyzing facial regions..."
+        // Show initial status message
+        resultTextView.text = "Preparing facial regions for analysis...\n\nThis may take a moment."
         
         // Process images in a background thread
         Thread {
             try {
                 val images = loadImagesFromIntent()
                 if (images.size == 5) {
-                    // Analyze all regions
+                    // Update UI to show analysis is starting
+                    runOnUiThread {
+                        resultTextView.text = "Analyzing facial regions...\n\nPlease wait while we process your images."
+                    }
+                    
+                    // Perform the analysis
+                    val analysisStartTime = System.currentTimeMillis()
                     val result = postScanImageAnalyzer.analyzeAllRegions(images)
+                    val analysisTime = System.currentTimeMillis() - analysisStartTime
                     
                     // Save results and images
                     val resultId = saveAnalysisResult(result, images)
                     
-                    // Update UI on main thread
+                    // Update UI on main thread with completed analysis
                     runOnUiThread {
-                        progressBar.visibility = View.GONE
-                        resultTextView.text = "Analysis complete!\nGAGS Score: ${result.totalGAGSScore}\nSeverity: ${result.severity}"
+                        // Enhanced results display
+                        val resultBuilder = StringBuilder()
+                        resultBuilder.append("✓ Analysis complete!\n\n")
+                        resultBuilder.append("📊 GAGS Score: ${result.totalGAGSScore}\n")
+                        resultBuilder.append("📋 Severity: ${result.severity}\n")
+                        resultBuilder.append("⏱️ Total Inference Time: ${result.totalInferenceTimeMs}ms\n")
+                        resultBuilder.append("⌛ Total Analysis Time: ${analysisTime}ms\n\n")
+                        resultBuilder.append("Navigating to detailed results...")
+                        
+                        resultTextView.text = resultBuilder.toString()
                         
                         // Store in singleton for easy access
                         GAGSData.totalGAGSScore = result.totalGAGSScore
                         GAGSData.severity = result.severity
                         GAGSData.totalAcneCounts = result.totalAcneCounts
+                        GAGSData.inferenceTimeMs = result.totalInferenceTimeMs
                         
-                        // Navigate to result activity
-                        navigateToResultActivity(resultId)
+                        // Add a short delay before navigating to results screen
+                        resultTextView.postDelayed({
+                            navigateToResultActivity(resultId)
+                        }, 1500)
                     }
                 } else {
                     runOnUiThread {
-                        progressBar.visibility = View.GONE
-                        resultTextView.text = "Error: Not all facial regions were provided. Found ${images.size}/5 regions."
+                        resultTextView.text = "❌ Error: Not all facial regions were provided.\n" +
+                                              "Found ${images.size}/5 regions.\n\n" +
+                                              "Please try capturing all regions again."
                     }
                 }
             } catch (e: Exception) {
@@ -86,8 +104,8 @@ class ModelInferenceActivity : AppCompatActivity() {
                 e.printStackTrace()
                 
                 runOnUiThread {
-                    progressBar.visibility = View.GONE
-                    resultTextView.text = "Error analyzing images: ${e.message}"
+                    resultTextView.text = "❌ Error analyzing images:\n${e.message}\n\n" +
+                                          "Please try again or check logs for details."
                 }
             } finally {
                 // Clean up resources
@@ -142,14 +160,15 @@ class ModelInferenceActivity : AppCompatActivity() {
             
             // Save detections for each region
             result.regionResults.forEach { (region, regionResult) ->
-                // Save region analysis summary
+                // Save region analysis summary with inference time
                 val summaryFile = File(resultDir, "${region.id}_summary.txt")
                 summaryFile.writeText(
                     "Region: ${region.displayName}\n" +
                     "Dominant Acne Type: ${regionResult.dominantAcneType}\n" +
                     "Region Score: ${regionResult.regionScore}\n" +
                     "Acne Counts: ${regionResult.acneCounts}\n" +
-                    "Detections: ${regionResult.detections.size}\n"
+                    "Detections: ${regionResult.detections.size}\n" +
+                    "Inference Time: ${regionResult.inferenceTimeMs}ms\n"
                 )
                 
                 // Save detailed detection data
@@ -172,7 +191,8 @@ class ModelInferenceActivity : AppCompatActivity() {
                 "Timestamp: ${Date(result.timestamp)}\n" +
                 "Total GAGS Score: ${result.totalGAGSScore}\n" +
                 "Severity: ${result.severity}\n" +
-                "Total Acne Counts: ${result.totalAcneCounts}\n"
+                "Total Acne Counts: ${result.totalAcneCounts}\n" +
+                "Total Inference Time: ${result.totalInferenceTimeMs}ms\n"
             )
             
             Log.d(TAG, "Saved analysis results to ${resultDir.absolutePath}")
@@ -197,31 +217,13 @@ class ModelInferenceActivity : AppCompatActivity() {
             putExtra("papule_count", GAGSData.totalAcneCounts["papule"] ?: 0)
             putExtra("nodule_count", GAGSData.totalAcneCounts["nodule"] ?: 0)
             putExtra("timestamp", System.currentTimeMillis())
+            putExtra("inference_time", GAGSData.inferenceTimeMs)
         }
         
         startActivity(intent)
         finish()
     }
     
-    private fun clearOldResults() {
-        try {
-            // Keep only the 5 most recent analysis results
-            val maxResultsToKeep = 5
-            
-            val resultDirs = storageDir.listFiles()?.filter { it.isDirectory }
-                ?.sortedByDescending { it.lastModified() } ?: return
-            
-            if (resultDirs.size > maxResultsToKeep) {
-                resultDirs.drop(maxResultsToKeep).forEach { dir ->
-                    dir.deleteRecursively()
-                    Log.d(TAG, "Deleted old analysis result: ${dir.name}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error clearing old results: ${e.message}")
-        }
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         postScanImageAnalyzer.close()

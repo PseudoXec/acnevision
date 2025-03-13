@@ -48,7 +48,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     private var boundingBoxScaleFactor = 1.0f
 
     interface AnalysisListener {
-        fun onAnalysisComplete(result: AnalysisResult)
+        fun onAnalysisComplete(result: AnalysisResult, inferenceTimeMs: Long)
     }
 
     data class AnalysisResult(
@@ -229,6 +229,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             // Check if the frame is likely empty or dark (simple check)
             if (isEmptyOrDarkFrame(bitmap)) {
                 Log.d(TAG, "Detected empty or dark frame, skipping analysis")
+                val inferenceTime = System.currentTimeMillis() - currentTime
                 listener.onAnalysisComplete(
                     AnalysisResult(
                         severity = 0,
@@ -240,7 +241,8 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
                             "nodule" to 0
                         ),
                         detections = emptyList()
-                    )
+                    ),
+                    inferenceTime,
                 )
                 return
             }
@@ -256,9 +258,10 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             
             // Save the result
             lastAnalysisResult = result
-            
+
+            val inferenceTime = System.currentTimeMillis() - currentTime
             // Notify listener
-            listener.onAnalysisComplete(result)
+            listener.onAnalysisComplete(result, inferenceTime)
             
             Log.d(TAG, "Frame analysis completed in ${System.currentTimeMillis() - currentTime}ms")
             

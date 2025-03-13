@@ -362,7 +362,7 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    override fun onAnalysisComplete(result: ImageAnalyzer.AnalysisResult) {
+    override fun onAnalysisComplete(result: ImageAnalyzer.AnalysisResult, inferenceTimeMs: Long) {
         // Since the detections are now already relative to the guide box,
         // we only need to filter out any that might be outside the 0-1 range
         val filteredDetections = result.detections.filter { detection ->
@@ -374,7 +374,7 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
         }
         
         // Update UI with filtered detections
-        boxOverlay.setDetections(filteredDetections)
+        boxOverlay.setDetections(filteredDetections, inferenceTimeMs)
         
         // Update UI with the analysis result
         runOnUiThread {
@@ -472,6 +472,7 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
         private var previewHeight = 0
         private var isFrontCamera = false
         private var lastDrawTime = 0L
+        private var processingTimeMs = 0L
         
         // Model dimensions - these match what we set in the camera configuration
         private val MODEL_WIDTH = 640
@@ -484,8 +485,11 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
             setWillNotDraw(false) // Ensure onDraw is called
         }
 
-        fun setDetections(newDetections: List<ImageAnalyzer.Detection>) {
+        fun setDetections(newDetections: List<ImageAnalyzer.Detection>, inferenceTimeMs: Long = 0) {
             detections = newDetections
+
+            processingTimeMs = inferenceTimeMs
+            lastDrawTime = System.currentTimeMillis()
 
             // Add debug logs
             Log.d(TAG, "Setting ${detections.size} detections to draw on preview size ${previewWidth}x${previewHeight}")
@@ -535,13 +539,10 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                     // Draw "No detections" text for debug
                     textPaint.textSize = 60f
                     canvas.drawText("Waiting for detections...", 50f, 120f, textPaint)
-                    
-                    // Add timestamp for debugging
-                    val timestamp = System.currentTimeMillis()
+
                     debugPaint.textSize = 36f
-                    canvas.drawText("Last updated: ${timestamp - lastDrawTime}ms ago", 50f, 180f, debugPaint)
-                    canvas.drawText("Preview size: ${previewWidth}x${previewHeight}", 50f, 230f, debugPaint)
-                    
+                    canvas.drawText("Processing time: ${processingTimeMs}ms", 50f, 180f, debugPaint)
+
                     // Draw the area where detections would appear with aspect ratio correction
                     if (previewWidth > 0 && previewHeight > 0) {
                         // Show the effective area where boxes would be drawn (accounting for aspect ratio)
@@ -567,16 +568,7 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                     // Draw timestamp and preview info
                     debugPaint.textSize = 30f
                     val timestamp = System.currentTimeMillis()
-                    canvas.drawText("Last updated: ${timestamp - lastDrawTime}ms ago", 50f, 180f, debugPaint)
-                    canvas.drawText("Preview size: ${previewWidth}x${previewHeight}", 50f, 220f, debugPaint)
-                    
-                    // Draw model area outline to help visualize coordinate mapping
-                    // val aspectRatioPaint = Paint().apply {
-                    //     style = Paint.Style.STROKE
-                    //     strokeWidth = 2f
-                    //     color = Color.CYAN
-                    // }
-                    // drawModelAreaOutline(canvas, aspectRatioPaint)
+                    canvas.drawText("Processing time: ${processingTimeMs}ms", 50f, 180f, debugPaint)
                 }
             } finally {
                 holder.unlockCanvasAndPost(canvas)

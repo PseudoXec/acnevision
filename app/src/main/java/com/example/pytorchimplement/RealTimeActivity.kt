@@ -773,14 +773,6 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                 }
                 canvas.drawRect(left, top, right, bottom, fillPaint)
                 
-                // Draw a center dot to help visualize the detection center point
-                val centerPaint = Paint().apply {
-                    color = boxColor
-                    style = Paint.Style.FILL
-                    alpha = 255  // Fully opaque
-                }
-                canvas.drawCircle(screenX, screenY, 5f, centerPaint)
-
                 // Draw label background
                 val confidence = (detection.confidence * 100).toInt()
                 val labelText = "${detection.className} ${confidence}%"

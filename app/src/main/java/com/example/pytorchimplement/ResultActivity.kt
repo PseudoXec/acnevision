@@ -34,6 +34,12 @@ import java.util.Arrays
 import java.util.ArrayList
 import java.io.File
 import android.graphics.Rect
+import android.view.WindowManager
+import androidx.fragment.app.DialogFragment
+import android.os.Parcelable
+import android.os.Parcel
+import android.widget.ImageButton
+import android.view.Gravity
 
 /**
  * Activity that displays the results of acne analysis with severity scores and bounding boxes.
@@ -75,20 +81,74 @@ class ResultActivity : AppCompatActivity() {
         val inferenceTimeMs: Long
     )
     
-    // Data class for detections
+    // Custom Parcelable implementation for Detection
     data class Detection(
         val className: String,
         val confidence: Float,
         val boundingBox: BoundingBox
-    )
+    ) : Parcelable {
+        constructor(parcel: Parcel) : this(
+            parcel.readString() ?: "",
+            parcel.readFloat(),
+            parcel.readParcelable(BoundingBox::class.java.classLoader) ?: BoundingBox(0f, 0f, 0f, 0f)
+        )
+
+        override fun writeToParcel(parcel: Parcel, flags: Int) {
+            parcel.writeString(className)
+            parcel.writeFloat(confidence)
+            parcel.writeParcelable(boundingBox, flags)
+        }
+
+        override fun describeContents(): Int {
+            return 0
+        }
+
+        companion object CREATOR : Parcelable.Creator<Detection> {
+            override fun createFromParcel(parcel: Parcel): Detection {
+                return Detection(parcel)
+            }
+
+            override fun newArray(size: Int): Array<Detection?> {
+                return arrayOfNulls(size)
+            }
+        }
+    }
     
-    // Bounding box coordinates class (all values normalized 0-1)
+    // Custom Parcelable implementation for BoundingBox
     data class BoundingBox(
         val x: Float, // center x coordinate
         val y: Float, // center y coordinate
         val width: Float, // width of box
         val height: Float // height of box
-    )
+    ) : Parcelable {
+        constructor(parcel: Parcel) : this(
+            parcel.readFloat(),
+            parcel.readFloat(),
+            parcel.readFloat(),
+            parcel.readFloat()
+        )
+
+        override fun writeToParcel(parcel: Parcel, flags: Int) {
+            parcel.writeFloat(x)
+            parcel.writeFloat(y)
+            parcel.writeFloat(width)
+            parcel.writeFloat(height)
+        }
+
+        override fun describeContents(): Int {
+            return 0
+        }
+
+        companion object CREATOR : Parcelable.Creator<BoundingBox> {
+            override fun createFromParcel(parcel: Parcel): BoundingBox {
+                return BoundingBox(parcel)
+            }
+
+            override fun newArray(size: Int): Array<BoundingBox?> {
+                return arrayOfNulls(size)
+            }
+        }
+    }
 
     // Current region index being displayed
     private var currentRegionIndex = 0
@@ -370,6 +430,19 @@ class ResultActivity : AppCompatActivity() {
     }
     
     /**
+     * Shows a full screen dialog with the expanded region image and detections
+     */
+    private fun showExpandedImageDialog(regionData: RegionData) {
+        val dialog = ExpandedImageDialogFragment.newInstance(
+            regionData.displayName,
+            regionData.bitmap,
+            regionData.detections.toTypedArray(),
+            regionData.inferenceTimeMs
+        )
+        dialog.show(supportFragmentManager, "expanded_image_dialog")
+    }
+    
+    /**
      * Adapter for the region ViewPager
      */
     inner class RegionPagerAdapter(private val regionDataList: List<RegionData>) : 
@@ -402,6 +475,14 @@ class ResultActivity : AppCompatActivity() {
             
             // Set region image
             holder.regionImage.setImageBitmap(regionData.bitmap)
+            
+            // Add tap-to-expand functionality
+            holder.regionImage.setOnClickListener {
+                showExpandedImageDialog(regionData)
+            }
+            
+            // Also add a hint to inform users about the tap-to-expand feature
+            holder.regionImage.contentDescription = "Tap to view ${regionData.displayName} in fullscreen"
             
             // Store reference to the image view
             regionImageViews[position] = holder.regionImage
@@ -669,6 +750,277 @@ class ResultActivity : AppCompatActivity() {
         
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             Log.d(TAG, "BoxOverlay surface destroyed")
+        }
+    }
+    
+    /**
+     * DialogFragment to show a fullscreen expanded image with detection boxes
+     */
+    class ExpandedImageDialogFragment : DialogFragment() {
+        private var image: Bitmap? = null
+        private var detections: Array<Detection>? = null
+        private var title: String? = null
+        private var inferenceTimeMs: Long = 0
+        
+        companion object {
+            private const val ARG_TITLE = "title"
+            private const val ARG_DETECTIONS = "detections"
+            private const val ARG_INFERENCE_TIME = "inference_time"
+            
+            fun newInstance(title: String, image: Bitmap, detections: Array<Detection>, inferenceTimeMs: Long): ExpandedImageDialogFragment {
+                val fragment = ExpandedImageDialogFragment()
+                fragment.image = image
+                fragment.detections = detections
+                fragment.title = title
+                fragment.inferenceTimeMs = inferenceTimeMs
+                return fragment
+            }
+        }
+        
+        override fun onCreateView(
+            inflater: LayoutInflater,
+            container: ViewGroup?,
+            savedInstanceState: Bundle?
+        ): View {
+            // Use a custom layout for the dialog
+            val view = inflater.inflate(R.layout.dialog_expanded_image, container, false)
+            
+            // Set up the image view
+            val imageView = view.findViewById<ImageView>(R.id.expanded_image)
+            imageView.setImageBitmap(image)
+            
+            // Set up the title
+            val titleView = view.findViewById<TextView>(R.id.expanded_title)
+            titleView.text = title
+            
+            // Set up inference time
+            val timeView = view.findViewById<TextView>(R.id.expanded_inference_time)
+            timeView.text = "Inference time: ${inferenceTimeMs}ms"
+            
+            // Add back button functionality
+            val backButton = view.findViewById<ImageButton>(R.id.back_button)
+            backButton.setOnClickListener {
+                dismiss()
+            }
+            
+            // Set up the overlay for detections
+            val container = view.findViewById<FrameLayout>(R.id.expanded_container)
+            
+            // Create overlay for drawing detection boxes
+            val overlay = ExpandedBoxOverlay(requireContext())
+            container.addView(overlay, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            
+            // Set detections after layout is ready
+            imageView.post {
+                overlay.setPreviewSize(container.width, container.height)
+                overlay.setDetections(detections?.toList() ?: emptyList())
+            }
+            
+            return view
+        }
+        
+        override fun onStart() {
+            super.onStart()
+            
+            // Make dialog fullscreen
+            dialog?.window?.apply {
+                setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+                setGravity(Gravity.CENTER)
+            }
+        }
+        
+        /**
+         * Custom view for drawing detection boxes in fullscreen mode
+         */
+        inner class ExpandedBoxOverlay(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
+            private val paint = Paint().apply {
+                isAntiAlias = true
+                style = Paint.Style.STROKE
+                strokeWidth = 6f // Slightly thicker lines for visibility
+            }
+            
+            private val textPaint = Paint().apply {
+                isAntiAlias = true
+                style = Paint.Style.FILL
+                color = Color.WHITE
+                textSize = 40f // Larger text for better readability
+            }
+            
+            private val backgroundPaint = Paint().apply {
+                style = Paint.Style.FILL
+                color = Color.parseColor("#80000000")  // Semi-transparent black
+            }
+            
+            private var detections: List<Detection> = emptyList()
+            private var previewWidth = 0
+            private var previewHeight = 0
+            private var imageWidth = 0
+            private var imageHeight = 0
+            private var imageRect = Rect()
+            
+            init {
+                setZOrderOnTop(true)
+                holder.setFormat(android.graphics.PixelFormat.TRANSPARENT)
+                holder.addCallback(this)
+                setWillNotDraw(false)
+            }
+            
+            fun setDetections(newDetections: List<Detection>) {
+                detections = newDetections
+                drawDetections()
+            }
+            
+            fun setPreviewSize(width: Int, height: Int) {
+                previewWidth = width
+                previewHeight = height
+                // Set a default image rect covering the whole area
+                imageRect.set(0, 0, width, height)
+            }
+            
+            private fun drawDetections() {
+                if (!holder.surface.isValid) {
+                    return
+                }
+                
+                val canvas = holder.lockCanvas() ?: return
+                try {
+                    // Clear the canvas
+                    canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+                    
+                    // Draw each detection box
+                    if (detections.isEmpty()) {
+                        // Show "No detections" text if there are none
+                        textPaint.textSize = 60f
+                        val text = "No acne detected in this region"
+                        val x = (previewWidth - textPaint.measureText(text)) / 2
+                        canvas.drawText(text, x, previewHeight / 2f, textPaint)
+                    } else {
+                        // Draw each detection with improved visibility
+                        detections.forEach { detection ->
+                            drawDetection(canvas, detection)
+                        }
+                        
+                        // Add a count indicator
+                        val countText = "${detections.size} acne lesions detected"
+                        textPaint.textSize = 50f
+                        val textWidth = textPaint.measureText(countText)
+                        val textBackground = Rect(
+                            10, 
+                            previewHeight - 100,
+                            (textWidth + 30).toInt(),
+                            previewHeight - 10
+                        )
+                        canvas.drawRect(textBackground, backgroundPaint)
+                        canvas.drawText(countText, 20f, previewHeight - 30f, textPaint)
+                    }
+                } finally {
+                    holder.unlockCanvasAndPost(canvas)
+                }
+            }
+            
+            private fun drawDetection(canvas: Canvas, detection: Detection) {
+                // Colors for different acne types
+                val boxColor = when {
+                    detection.className.contains("comedone") -> Color.YELLOW
+                    detection.className.contains("pustule") -> Color.RED
+                    detection.className.contains("papule") -> Color.MAGENTA
+                    detection.className.contains("nodule") -> Color.GREEN
+                    else -> Color.WHITE
+                }
+                
+                // Set the box color
+                paint.color = boxColor
+                
+                try {
+                    // Convert normalized coordinates to screen coordinates
+                    val left = (detection.boundingBox.x - detection.boundingBox.width / 2) * previewWidth
+                    val top = (detection.boundingBox.y - detection.boundingBox.height / 2) * previewHeight
+                    val right = (detection.boundingBox.x + detection.boundingBox.width / 2) * previewWidth
+                    val bottom = (detection.boundingBox.y + detection.boundingBox.height / 2) * previewHeight
+                    
+                    // Draw bounding box with thicker stroke for better visibility
+                    canvas.drawRect(left, top, right, bottom, paint)
+                    
+                    // Draw a semi-transparent fill
+                    val fillPaint = Paint().apply {
+                        color = boxColor
+                        style = Paint.Style.FILL
+                        alpha = 60
+                    }
+                    canvas.drawRect(left, top, right, bottom, fillPaint)
+                    
+                    // Draw center marker
+                    val centerPaint = Paint().apply {
+                        color = boxColor
+                        style = Paint.Style.FILL
+                        alpha = 255
+                    }
+                    canvas.drawCircle(
+                        detection.boundingBox.x * previewWidth,
+                        detection.boundingBox.y * previewHeight,
+                        10f, // Larger dot in fullscreen mode
+                        centerPaint
+                    )
+                    
+                    // Prepare text with class name and confidence
+                    val confidence = (detection.confidence * 100).toInt()
+                    val className = when {
+                        detection.className.contains("comedone") -> "Comedone"
+                        detection.className.contains("pustule") -> "Pustule"
+                        detection.className.contains("papule") -> "Papule"
+                        detection.className.contains("nodule") -> "Nodule"
+                        else -> detection.className
+                    }
+                    val text = "$className ${confidence}%"
+                    
+                    // Larger text in fullscreen mode
+                    textPaint.textSize = 40f
+                    val textWidth = textPaint.measureText(text)
+                    
+                    // Position text above the box
+                    var labelLeft = left
+                    var labelTop = top - 50
+                    
+                    // Ensure label stays on screen
+                    if (labelTop < 10) labelTop = top + 30
+                    if (labelLeft + textWidth + 20 > previewWidth) {
+                        labelLeft = previewWidth - textWidth - 20
+                    }
+                    
+                    // Draw background for text
+                    val textBackgroundRect = Rect(
+                        labelLeft.toInt(), 
+                        labelTop.toInt(),
+                        (labelLeft + textWidth + 20).toInt(),
+                        (labelTop + 45).toInt()
+                    )
+                    canvas.drawRect(textBackgroundRect, backgroundPaint)
+                    
+                    // Draw text
+                    canvas.drawText(text, labelLeft + 10, labelTop + 35, textPaint)
+                    
+                } catch (e: Exception) {
+                    Log.e("ExpandedBoxOverlay", "Error drawing detection: ${e.message}")
+                }
+            }
+            
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                drawDetections()
+            }
+            
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                if (width > 0 && height > 0) {
+                    previewWidth = width
+                    previewHeight = height
+                    imageRect.set(0, 0, width, height)
+                    drawDetections()
+                }
+            }
+            
+            override fun surfaceDestroyed(holder: SurfaceHolder) {}
         }
     }
 }

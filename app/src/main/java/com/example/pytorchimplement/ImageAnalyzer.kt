@@ -21,6 +21,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.HashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.io.File
+import java.io.FileOutputStream
 
 /**
  * Image analyzer for real-time ONNX model inference
@@ -60,7 +63,8 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             "papule" to 0,
             "nodule" to 0
         ),
-        val detections: List<Detection> = emptyList() // Add list of detections with bounding boxes
+        val detections: List<Detection> = emptyList(), // Add list of detections with bounding boxes
+        val inferenceTimeMs: Long = 0 // Default value added for compatibility
     )
     
     // New data class to hold detection information including bounding boxes
@@ -128,6 +132,18 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     private var guideBoxWidth = 1f
     private var guideBoxHeight = 1f
     private var useGuideBoxOnly = true  // Set to true to only analyze the guide box area
+    
+    // Class labels
+    private val classNames = arrayOf(
+        "comedone", "pustule", "papule", "nodule"
+    )
+
+    // For skipping frames (optional, to reduce processing load)
+    private var frameCount = 0
+    private val PROCESS_FRAME_INTERVAL = 1  // Process every Nth frame
+    
+    // Tracking sequence IDs
+    private val lastAnalysisId = AtomicLong(0)
     
     init {
         loadModel()

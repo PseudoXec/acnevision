@@ -34,6 +34,9 @@ import android.graphics.Path
 import android.graphics.DashPathEffect
 import android.view.Surface
 import android.graphics.Rect
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import com.example.pytorchimplement.BuildConfig
 
 class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
 
@@ -45,6 +48,8 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
     private lateinit var resultTextView: TextView
     private lateinit var detailsTextView: TextView
     private lateinit var boxOverlay: BoxOverlay
+    private val lastUIUpdateTime = AtomicLong(0)
+    private val uiUpdateInterval = 200L // 5 updates per second
 
     // Define required permissions based on Android version
     private val REQUIRED_PERMISSIONS = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -97,6 +102,13 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
         }
     }
 
+    private val DEBUG = try {
+        BuildConfig.DEBUG
+    } catch (e: Exception) {
+        Log.e(TAG, "Error accessing BuildConfig.DEBUG: ${e.message}")
+        false // Default to false (production mode) if BuildConfig isn't available
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_real_time_activity)
@@ -116,6 +128,9 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
         val previewView = findViewById<PreviewView>(R.id.view_finder)
         boxOverlay = BoxOverlay(this)
         
+        // Enable hardware acceleration for better performance
+        boxOverlay.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        
         // Add BoxOverlay with MATCH_PARENT to ensure it covers the entire preview
         (previewView.parent as ViewGroup).addView(boxOverlay, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -127,7 +142,9 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
             val width = previewView.width
             val height = previewView.height
             if (width > 0 && height > 0) {
-                Log.d(TAG, "PreviewView size changed: ${width}x${height}")
+                if (DEBUG) {
+                    Log.d(TAG, "PreviewView size changed: ${width}x${height}")
+                }
                 boxOverlay.setPreviewSize(width, height)
                 boxOverlay.setCameraFacing(isFrontCamera)
             }
@@ -165,7 +182,8 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
 
-        cameraExecutor = Executors.newSingleThreadExecutor()
+        // Initialize with a larger thread pool for parallel operations
+        cameraExecutor = Executors.newFixedThreadPool(2)
     }
 
     
@@ -242,16 +260,13 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                 val cameraProvider = cameraProviderFuture.get()
                 val previewView = findViewById<PreviewView>(R.id.view_finder)
 
-                // Get display metrics to understand device screen dimensions
-                val displayMetrics = resources.displayMetrics
-                Log.d(TAG, "Device screen size: ${displayMetrics.widthPixels}x${displayMetrics.heightPixels}")
-
-                // Force square aspect ratio for preview to match model input
-                val targetResolution = android.util.Size(640, 640)
+                // Use moderate resolutions that work well
+                val previewResolution = android.util.Size(640, 640)  
+                val analysisResolution = android.util.Size(320, 320) // Moderate size for reliable detection
                 
                 // Configure preview with square aspect ratio
                 val preview = Preview.Builder()
-                    .setTargetResolution(targetResolution)
+                    .setTargetResolution(previewResolution)
                     .setTargetRotation(Surface.ROTATION_0)
                     .build()
                     .also {
@@ -260,20 +275,22 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
 
                 // For image capture, use the model's preferred size
                 imageCapture = ImageCapture.Builder()
-                    .setTargetResolution(targetResolution)
+                    .setTargetResolution(previewResolution)
                     .setTargetRotation(Surface.ROTATION_0)
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .build()
 
-                // For analysis, use the exact model input dimensions
+                // Basic image analysis setup that works reliably
                 val imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetResolution(targetResolution)
+                    .setTargetResolution(analysisResolution)
                     .setTargetRotation(Surface.ROTATION_0)
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST) 
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                     .build()
                     
                 // Initialize the image analyzer
                 imageAnalyzer = ImageAnalyzer(this, this)
+                // Use executor service for analysis
                 imageAnalysis.setAnalyzer(cameraExecutor, imageAnalyzer!!)
 
                 // Select back or front camera
@@ -296,9 +313,11 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                 )
                 
                 // Add debug info about camera resolution
-                val cameraInfo = camera?.cameraInfo
-                if (cameraInfo != null) {
-                    Log.d(TAG, "Camera sensor rotation: ${cameraInfo.sensorRotationDegrees}°")
+                if (DEBUG) {
+                    val cameraInfo = camera?.cameraInfo
+                    if (cameraInfo != null) {
+                        Log.d(TAG, "Camera sensor rotation: ${cameraInfo.sensorRotationDegrees}°")
+                    }
                 }
                 
                 // Update overlay with preview size - with better logging
@@ -307,7 +326,9 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                     val height = previewView.height
                     
                     if (width > 0 && height > 0) {
-                        Log.d(TAG, "PreviewView dimensions: ${width}x${height}, aspect ratio: ${width.toFloat()/height}")
+                        if (DEBUG) {
+                            Log.d(TAG, "PreviewView dimensions: ${width}x${height}, aspect ratio: ${width.toFloat()/height}")
+                        }
                         boxOverlay.setPreviewSize(width, height)
                         boxOverlay.setCameraFacing(isFrontCamera)
                         
@@ -324,7 +345,7 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                         if (imageAnalyzer?.lastAnalysisResult != null) {
                             val lastResult = imageAnalyzer?.lastAnalysisResult
                             if (lastResult != null && lastResult.detections.isNotEmpty()) {
-                                boxOverlay.setDetections(lastResult.detections)
+                                boxOverlay.setDetections(lastResult.detections, lastResult.timestamp, lastResult.inferenceTimeMs)
                             }
                         }
                     } else {
@@ -344,11 +365,11 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                             .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
                             .build()
                             
-                        // Execute focus action
-                        camera?.cameraControl?.startFocusAndMetering(action)
-                        
-                        view.performClick()
-                        true
+                            // Execute focus action
+                            camera?.cameraControl?.startFocusAndMetering(action)
+                            
+                            view.performClick()
+                            true
                     } catch (e: Exception) {
                         Log.e(TAG, "Cannot focus: ${e.message}")
                         false
@@ -363,63 +384,58 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
     }
 
     override fun onAnalysisComplete(result: ImageAnalyzer.AnalysisResult, inferenceTimeMs: Long) {
-        // Since the detections are now already relative to the guide box,
-        // we only need to filter out any that might be outside the 0-1 range
+        // Use a simple approach - filter detections, then update UI
         val filteredDetections = result.detections.filter { detection ->
             val x = detection.boundingBox.x
             val y = detection.boundingBox.y
             
-            // Ensure the detection is within the normalized range (0-1)
+            // Basic range check
             x >= 0 && x <= 1 && y >= 0 && y <= 1
         }
         
-        // Update UI with filtered detections
-        boxOverlay.setDetections(filteredDetections, inferenceTimeMs)
+        // Simple throttling based on fixed interval
+        val currentTime = System.currentTimeMillis()
+        val timeSinceLastUpdate = currentTime - lastUIUpdateTime.get()
         
-        // Update UI with the analysis result
-        runOnUiThread {
-            // Update header text with detection status
-            resultTextView.text = "LIVE DETECTION: Acne Classification"
+        // Update if it's been at least 100ms since last update
+        if (timeSinceLastUpdate >= 100) {
+            // Update overlay with filtered detections
+            boxOverlay.setDetections(filteredDetections, result.timestamp, inferenceTimeMs)
             
-            // Update acne counts with more detail
-            val countsText = StringBuilder("DETECTED ACNE TYPES:\n")
-            var totalCount = 0
-            
-            // Display counts for each acne type
-            result.acneCounts.forEach { (type, count) ->
-                if (count > 0) {
-                    countsText.append("• ${type.capitalize()}: $count\n")
-                    totalCount += count
-                }
-            }
-            
-            // Add total count
-            countsText.append("\nTOTAL ACNE DETECTED: $totalCount")
-            
-            // Add detection info
-            if (filteredDetections.isNotEmpty()) {
-                countsText.append("\n\nDetections: ${filteredDetections.size}")
+            // Update UI text
+            runOnUiThread {
+                // Update header text with detection status
+                resultTextView.text = "LIVE DETECTION: Acne Classification"
                 
-                // Show more details about some detections (limit to 3 for readability)
-                if (filteredDetections.size <= 3) {
-                    countsText.append("\n\nDetailed detections:")
-                    filteredDetections.forEachIndexed { index, detection ->
-                        val confidence = (detection.confidence * 100).toInt()
-                        countsText.append("\n${index+1}. ${detection.className} ($confidence%)")
+                // Create the text for acne counts
+                val countsText = StringBuilder("DETECTED ACNE TYPES:\n")
+                var totalCount = 0
+                
+                // Display counts for each acne type
+                result.acneCounts.forEach { (type, count) ->
+                    if (count > 0) {
+                        countsText.append("• ${type.capitalize()}: $count\n")
+                        totalCount += count
                     }
                 }
-            } else {
-                countsText.append("\n\nNo detections found")
+                
+                // Add total count and processing time
+                countsText.append("\nTOTAL: $totalCount · TIME: ${inferenceTimeMs}ms")
+                
+                detailsTextView.text = countsText.toString()
             }
             
-            detailsTextView.text = countsText.toString()
-            
-            // Log the analysis results
+            // Update the timestamp
+            lastUIUpdateTime.set(currentTime)
+        }
+        
+        // Only log in debug mode
+        if (DEBUG) {
             Log.d(TAG, "Frame processed: Acne Types=${result.acneCounts}, " +
-                    "Total=$totalCount, Detections=${filteredDetections.size}")
+                    "Total Detections=${filteredDetections.size}, " +
+                    "Time=${inferenceTimeMs}ms")
         }
     }
-
 
     override fun onDestroy() {
         super.onDestroy()
@@ -435,17 +451,18 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
      * Custom view for drawing bounding boxes overlay on the camera preview
      */
     inner class BoxOverlay(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
+        // Pre-allocated Paint objects for better performance
         private val paint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.STROKE
-            strokeWidth = 10f // Increased thickness for better visibility
+            strokeWidth = 10f
         }
         
         private val textPaint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.FILL
             color = Color.WHITE
-            textSize = 52f // Larger text for better visibility
+            textSize = 52f
         }
         
         private val backgroundPaint = Paint().apply {
@@ -467,12 +484,73 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
             alpha = 150 // Semi-transparent
         }
         
+        // Pre-allocated Paint objects for different acne classes for better performance
+        private val acneClassColors = mapOf(
+            "comedone" to Paint().apply { 
+                color = Color.YELLOW
+                style = Paint.Style.STROKE
+                strokeWidth = 10f
+                isAntiAlias = true
+            },
+            "pustule" to Paint().apply { 
+                color = Color.RED
+                style = Paint.Style.STROKE
+                strokeWidth = 10f
+                isAntiAlias = true
+            },
+            "papule" to Paint().apply { 
+                color = Color.MAGENTA
+                style = Paint.Style.STROKE
+                strokeWidth = 10f
+                isAntiAlias = true
+            },
+            "nodule" to Paint().apply { 
+                color = Color.GREEN
+                style = Paint.Style.STROKE
+                strokeWidth = 10f
+                isAntiAlias = true
+            }
+        )
+        
+        private val acneClassFillColors = mapOf(
+            "comedone" to Paint().apply { 
+                color = Color.YELLOW
+                style = Paint.Style.FILL
+                alpha = 60
+            },
+            "pustule" to Paint().apply { 
+                color = Color.RED
+                style = Paint.Style.FILL
+                alpha = 60
+            },
+            "papule" to Paint().apply { 
+                color = Color.MAGENTA
+                style = Paint.Style.FILL
+                alpha = 60
+            },
+            "nodule" to Paint().apply { 
+                color = Color.GREEN
+                style = Paint.Style.FILL
+                alpha = 60
+            }
+        )
+        
         private var detections: List<ImageAnalyzer.Detection> = emptyList()
         private var previewWidth = 0
         private var previewHeight = 0
         private var isFrontCamera = false
         private var lastDrawTime = 0L
-        private var processingTimeMs = 0L
+        private var processTimeMs = 0L
+        private var frameTimestamp = 0L
+        private var drawingEnabled = true
+        
+        // Frame rate control
+        private val targetDrawInterval = 33L // ~30fps
+        
+        // Caching for better performance
+        private var cachedGuideRect: Rect? = null
+        private var lastPreviewWidth = 0
+        private var lastPreviewHeight = 0
         
         // Model dimensions - these match what we set in the camera configuration
         private val MODEL_WIDTH = 640
@@ -483,44 +561,87 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
             holder.setFormat(android.graphics.PixelFormat.TRANSPARENT)
             holder.addCallback(this)
             setWillNotDraw(false) // Ensure onDraw is called
+            
+            // Enable hardware acceleration for better performance
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            
+            // Log initialization
+            Log.d(TAG, "BoxOverlay initialized")
         }
 
-        fun setDetections(newDetections: List<ImageAnalyzer.Detection>, inferenceTimeMs: Long = 0) {
+        fun setDetections(newDetections: List<ImageAnalyzer.Detection>, timestamp: Long, inferenceTimeMs: Long = 0) {
+            // Keep this simple - just log and update
+            Log.d(TAG, "Received ${newDetections.size} detections to draw")
+            
             detections = newDetections
-
-            processingTimeMs = inferenceTimeMs
+            frameTimestamp = timestamp
+            processTimeMs = inferenceTimeMs
             lastDrawTime = System.currentTimeMillis()
 
-            // Add debug logs
-            Log.d(TAG, "Setting ${detections.size} detections to draw on preview size ${previewWidth}x${previewHeight}")
-
-            // Only log details if there are just a few detections
-            if (detections.size <= 5) {
-                detections.forEachIndexed { index, detection ->
-                    Log.d(TAG, "  - Detection $index: ${detection.className} (${detection.confidence * 100}%), " +
-                          "box=[${detection.boundingBox.x.format(3)}, ${detection.boundingBox.y.format(3)}, " +
-                          "${detection.boundingBox.width.format(3)}, ${detection.boundingBox.height.format(3)}]")
-                }
+            // Force a redraw
+            try {
+                drawDetections(true)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error drawing detections: ${e.message}")
             }
-
-            // Force immediate redraw
+            
+            // Also request a redraw through the View system
             invalidate()
-
-            // Also draw on the surface if it's valid
-            drawDetections()
+            postInvalidate()
         }
 
         fun setPreviewSize(width: Int, height: Int) {
             Log.d(TAG, "BoxOverlay size set to ${width}x${height}")
             previewWidth = width
             previewHeight = height
+            
+            // Clear cached guide rect when size changes
+            if (width != lastPreviewWidth || height != lastPreviewHeight) {
+                cachedGuideRect = null
+            }
         }
         
         fun setCameraFacing(front: Boolean) {
             isFrontCamera = front
+            // Clear cached guide rect when camera switches
+            cachedGuideRect = null
         }
         
-        private fun drawDetections() {
+        // Override onDraw as a backup drawing mechanism
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            
+            // If detections are available but surface drawing failed, try drawing here
+            if (detections.isNotEmpty()) {
+                try {
+                    // Draw guide box
+                    drawFaceGuide(canvas)
+                    
+                    // Draw detections
+                    detections.forEach { detection ->
+                        drawBoxForDetection(canvas, detection)
+                    }
+                    
+                    Log.d(TAG, "Drew ${detections.size} detections via onDraw")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in onDraw: ${e.message}")
+                }
+            }
+        }
+        
+        private fun drawDetections(forceRedraw: Boolean = false) {
+            // Skip if drawing is disabled
+            if (!drawingEnabled) {
+                Log.d(TAG, "Drawing is disabled, skipping")
+                return
+            }
+            
+            // Throttle drawing to target frame rate, unless forced
+            val currentTime = System.currentTimeMillis()
+            if (!forceRedraw && currentTime - lastDrawTime < targetDrawInterval) {
+                return
+            }
+            
             if (!holder.surface.isValid) {
                 Log.d(TAG, "Cannot draw - surface is not valid")
                 return
@@ -536,173 +657,135 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                 
                 // Draw each detection box
                 if (detections.isEmpty()) {
-                    // Draw "No detections" text for debug
-                    textPaint.textSize = 60f
-                    canvas.drawText("Waiting for detections...", 50f, 120f, textPaint)
-
-                    debugPaint.textSize = 36f
-                    canvas.drawText("Processing time: ${processingTimeMs}ms", 50f, 180f, debugPaint)
-
-                    // Draw the area where detections would appear with aspect ratio correction
-                    if (previewWidth > 0 && previewHeight > 0) {
-                        // Show the effective area where boxes would be drawn (accounting for aspect ratio)
-                        val aspectRatioPaint = Paint().apply {
-                            style = Paint.Style.STROKE
-                            strokeWidth = 2f
-                            color = Color.CYAN
-                        }
-                        
-                        // Draw a rectangle showing the target 640x640 region mapped to screen
-                        // drawModelAreaOutline(canvas, aspectRatioPaint)
-                    }
+                    // Skip drawing "waiting" text for cleaner UI
                 } else {
+                    // Draw all detections
                     detections.forEach { detection ->
                         drawBoxForDetection(canvas, detection)
                     }
                     
-                    // Draw detection count at the top
-                    textPaint.textSize = 60f
-                    val countText = "Found: ${detections.size} detections"
-                    canvas.drawText(countText, 50f, 120f, textPaint)
+                    // Draw a simplified info panel in the top corner
+                    val infoBackgroundPaint = Paint().apply {
+                        style = Paint.Style.FILL
+                        color = Color.parseColor("#AA000000") // Semi-transparent black
+                    }
                     
-                    // Draw timestamp and preview info
-                    debugPaint.textSize = 30f
-                    val timestamp = System.currentTimeMillis()
-                    canvas.drawText("Processing time: ${processingTimeMs}ms", 50f, 180f, debugPaint)
+                    // Prepare text
+                    val countText = "${detections.size} detections"
+                    val timeText = "${processTimeMs}ms"
+                    
+                    textPaint.textSize = 40f
+                    val textWidth = Math.max(
+                        textPaint.measureText(countText),
+                        textPaint.measureText(timeText)
+                    ) + 20f
+                    val textHeight = textPaint.textSize * 2 + 20f
+                    
+                    // Draw info panel background
+                    canvas.drawRect(
+                        20f, 20f, 
+                        20f + textWidth, 
+                        20f + textHeight, 
+                        infoBackgroundPaint
+                    )
+                    
+                    // Draw text
+                    textPaint.color = Color.WHITE
+                    canvas.drawText(countText, 30f, 20f + textPaint.textSize, textPaint)
+                    canvas.drawText(timeText, 30f, 20f + textPaint.textSize * 2, textPaint)
+                    
+                    if (DEBUG) {
+                        Log.d(TAG, "Successfully drew ${detections.size} detection boxes to surface")
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error drawing to surface: ${e.message}")
+                e.printStackTrace()
             } finally {
-                holder.unlockCanvasAndPost(canvas)
+                try {
+                    holder.unlockCanvasAndPost(canvas)
+                    lastDrawTime = currentTime
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error posting canvas: ${e.message}")
+                }
             }
         }
 
         private fun drawFaceGuide(canvas: Canvas) {
-            // Get the guide rect that we're using for detection
-            val guideRect = getModelToScreenRect()
-            
-            // Extract coordinates
-            val frameX = guideRect.left
-            val frameY = guideRect.top
-            val frameSize = guideRect.width()
-            
-            // Draw outer dashed frame with improved visibility
-            guidePaint.color = Color.WHITE
-            guidePaint.strokeWidth = 6f
-            guidePaint.pathEffect = DashPathEffect(floatArrayOf(40f, 20f), 0f)
-            guidePaint.alpha = 200 // More visible
-            
-            canvas.drawRect(
-                frameX.toFloat(),
-                frameY.toFloat(),
-                (frameX + frameSize).toFloat(),
-                (frameY + frameSize).toFloat(),
-                guidePaint
-            )
-            
-            // Draw corner markers for better alignment guidance
-            val cornerSize = frameSize * 0.1f
-            val cornerPaint = Paint().apply {
-                color = Color.WHITE
-                style = Paint.Style.STROKE
-                strokeWidth = 8f
-                alpha = 255 // Fully opaque for better visibility
+            try {
+                // Get the guide rect that we're using for detection
+                val guideRect = getModelToScreenRect()
+                
+                // Extract coordinates
+                val frameX = guideRect.left
+                val frameY = guideRect.top
+                val frameSize = guideRect.width()
+                
+                // Draw outer dashed frame with improved visibility
+                guidePaint.color = Color.WHITE
+                guidePaint.strokeWidth = 6f
+                guidePaint.pathEffect = DashPathEffect(floatArrayOf(40f, 20f), 0f)
+                guidePaint.alpha = 200 // More visible
+                
+                canvas.drawRect(
+                    frameX.toFloat(),
+                    frameY.toFloat(),
+                    (frameX + frameSize).toFloat(),
+                    (frameY + frameSize).toFloat(),
+                    guidePaint
+                )
+                
+                // Draw corner markers for better alignment guidance
+                val cornerSize = frameSize * 0.1f
+                val cornerPaint = Paint().apply {
+                    color = Color.WHITE
+                    style = Paint.Style.STROKE
+                    strokeWidth = 8f
+                    alpha = 255 // Fully opaque for better visibility
+                }
+                
+                // Top-left corner
+                canvas.drawLine(frameX.toFloat(), frameY.toFloat(), 
+                                frameX.toFloat() + cornerSize, frameY.toFloat(), cornerPaint)
+                canvas.drawLine(frameX.toFloat(), frameY.toFloat(), 
+                                frameX.toFloat(), frameY.toFloat() + cornerSize, cornerPaint)
+                
+                // Top-right corner
+                canvas.drawLine((frameX + frameSize).toFloat(), frameY.toFloat(), 
+                                (frameX + frameSize).toFloat() - cornerSize, frameY.toFloat(), cornerPaint)
+                canvas.drawLine((frameX + frameSize).toFloat(), frameY.toFloat(), 
+                                (frameX + frameSize).toFloat(), frameY.toFloat() + cornerSize, cornerPaint)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error drawing face guide: ${e.message}")
             }
-            
-            // Top-left corner
-            canvas.drawLine(frameX.toFloat(), frameY.toFloat(), 
-                            frameX.toFloat() + cornerSize, frameY.toFloat(), cornerPaint)
-            canvas.drawLine(frameX.toFloat(), frameY.toFloat(), 
-                            frameX.toFloat(), frameY.toFloat() + cornerSize, cornerPaint)
-            
-            // Top-right corner
-            canvas.drawLine((frameX + frameSize).toFloat(), frameY.toFloat(), 
-                            (frameX + frameSize).toFloat() - cornerSize, frameY.toFloat(), cornerPaint)
-            canvas.drawLine((frameX + frameSize).toFloat(), frameY.toFloat(), 
-                            (frameX + frameSize).toFloat(), frameY.toFloat() + cornerSize, cornerPaint)
-        }
-
-        private fun drawModelAreaOutline(canvas: Canvas, paint: Paint) {
-            val visibleModelRect = getVisibleModelRect()
-
-            if (visibleModelRect.width() == 0 || visibleModelRect.height() == 0) {
-                Log.e(TAG, "Error: visibleModelRect has zero width or height!")
-                return
-            }
-
-            Log.d(TAG, "Drawing Model Area: Left=${visibleModelRect.left}, Top=${visibleModelRect.top}, Right=${visibleModelRect.right}, Bottom=${visibleModelRect.bottom}")
-
-            // Draw the outline rectangle
-            canvas.drawRect(
-                visibleModelRect.left.toFloat(),
-                visibleModelRect.top.toFloat(),
-                visibleModelRect.right.toFloat(),
-                visibleModelRect.bottom.toFloat(),
-                paint
-            )
-
-            // Add debug marker lines
-            val markerSize = 40f  // Increased size for better visibility
-
-            // Top-left marker
-            canvas.drawLine(
-                visibleModelRect.left.toFloat(),
-                visibleModelRect.top.toFloat(),
-                visibleModelRect.left.toFloat() + markerSize,
-                visibleModelRect.top.toFloat(),
-                paint
-            )
-            canvas.drawLine(
-                visibleModelRect.left.toFloat(),
-                visibleModelRect.top.toFloat(),
-                visibleModelRect.left.toFloat(),
-                visibleModelRect.top.toFloat() + markerSize,
-                paint
-            )
-
-            // Bottom-right marker
-            canvas.drawLine(
-                visibleModelRect.right.toFloat(),
-                visibleModelRect.bottom.toFloat(),
-                visibleModelRect.right.toFloat() - markerSize,
-                visibleModelRect.bottom.toFloat(),
-                paint
-            )
-            canvas.drawLine(
-                visibleModelRect.right.toFloat(),
-                visibleModelRect.bottom.toFloat(),
-                visibleModelRect.right.toFloat(),
-                visibleModelRect.bottom.toFloat() - markerSize,
-                paint
-            )
-
-            // Add dimensions text
-            val dimensionsText = "${visibleModelRect.width()}x${visibleModelRect.height()}"
-            debugPaint.color = Color.CYAN
-            debugPaint.textSize = 50f  // Make text more readable
-            canvas.drawText(
-                dimensionsText,
-                visibleModelRect.left.toFloat() + 20,
-                visibleModelRect.top.toFloat() + 50,
-                debugPaint
-            )
-
-            Log.d(TAG, "Model Area Drawn: $dimensionsText")
         }
 
         fun getModelToScreenRect(): Rect {
+            // Return cached rect if dimensions haven't changed
+            if (cachedGuideRect != null && 
+                previewWidth == lastPreviewWidth && 
+                previewHeight == lastPreviewHeight) {
+                return cachedGuideRect!!
+            }
+            
             // Calculate a square area that matches the model's input dimensions
             val boxSize = Math.min(previewWidth, previewHeight) * 0.9f
             val left = (previewWidth - boxSize) / 2
             val top = (previewHeight - boxSize) / 2
             
-            val rect = Rect(
+            cachedGuideRect = Rect(
                 left.toInt(), 
                 top.toInt(), 
                 (left + boxSize).toInt(), 
                 (top + boxSize).toInt()
             )
             
-            Log.d(TAG, "Face guide frame: ${rect.width()}x${rect.height()} at (${rect.left},${rect.top})")
-            return rect
+            lastPreviewWidth = previewWidth
+            lastPreviewHeight = previewHeight
+            
+            Log.d(TAG, "Created guide frame: ${cachedGuideRect!!.width()}x${cachedGuideRect!!.height()} at (${cachedGuideRect!!.left},${cachedGuideRect!!.top})")
+            
+            return cachedGuideRect!!
         }
 
         private fun drawBoxForDetection(canvas: Canvas, detection: ImageAnalyzer.Detection) {
@@ -710,128 +793,108 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                 // Get the guide box area
                 val guideRect = getModelToScreenRect()
                 
-                // Get normalized coordinates (0-1) - these are now relative to the guide box
+                // Get normalized coordinates (0-1)
                 val normX = detection.boundingBox.x
                 val normY = detection.boundingBox.y
                 val normWidth = detection.boundingBox.width
                 val normHeight = detection.boundingBox.height
                 
-                // Log the normalized coordinates for debugging
-                Log.d(TAG, "Drawing detection: ${detection.className} at normalized coords: " +
-                      "x=${normX.format(3)}, y=${normY.format(3)}, " +
-                      "w=${normWidth.format(3)}, h=${normHeight.format(3)}")
-
-                // Convert normalized coordinates (0-1) directly to screen pixels within the guide box
-                // Since the normalized coordinates are now relative to the guide box, this is simpler
+                // Convert to screen coordinates
                 val screenX = guideRect.left + (normX * guideRect.width())
                 val screenY = guideRect.top + (normY * guideRect.height())
                 val screenWidth = normWidth * guideRect.width()
                 val screenHeight = normHeight * guideRect.height()
                 
-                // Log the screen coordinates for debugging
-                Log.d(TAG, "Mapped to screen coords: x=${screenX.toInt()}, y=${screenY.toInt()}, " +
-                      "w=${screenWidth.toInt()}, h=${screenHeight.toInt()}")
-
-                // Ensure the bounding box has a minimum size for visibility
-                val minBoxSize = Math.min(previewWidth, previewHeight) * 0.03f
+                // Default min box size
+                val minBoxSize = guideRect.width() * 0.05f
                 val finalWidth = Math.max(screenWidth, minBoxSize)
                 val finalHeight = Math.max(screenHeight, minBoxSize)
 
-                // Calculate the box corners
-                var left = screenX - finalWidth / 2
+                // POSITION CORRECTION: Add a leftward offset to fix the rightward skew
+                // This value may need to be tuned based on testing
+                val offsetCorrection = guideRect.width() * 0.05f  // 5% of guide width leftward shift
+
+                // Calculate box coordinates with correction
+                var left = (screenX - finalWidth / 2) - offsetCorrection
                 var top = screenY - finalHeight / 2
-                var right = screenX + finalWidth / 2
+                var right = (screenX + finalWidth / 2) - offsetCorrection
                 var bottom = screenY + finalHeight / 2
 
-                // Apply mirroring correction for front camera
+                // Apply mirroring for front camera if needed
                 if (isFrontCamera) {
                     val oldLeft = left
                     left = previewWidth - right
                     right = previewWidth - oldLeft
                 }
 
-                // Set bounding box color based on detected class
-                val boxColor = when {
-                    detection.className.contains("comedone") -> Color.YELLOW
-                    detection.className.contains("pustule") -> Color.RED
-                    detection.className.contains("papule") -> Color.MAGENTA
-                    detection.className.contains("nodule") -> Color.GREEN
-                    else -> Color.WHITE
+                // Get paint objects based on class
+                val className = detection.className.lowercase()
+                val basePaint = when {
+                    className.contains("comedone") -> acneClassColors["comedone"]
+                    className.contains("pustule") -> acneClassColors["pustule"]
+                    className.contains("papule") -> acneClassColors["papule"]
+                    className.contains("nodule") -> acneClassColors["nodule"]
+                    else -> acneClassColors["comedone"] // default
+                } ?: paint
+                
+                // Get fill paint
+                val fillPaint = when {
+                    className.contains("comedone") -> acneClassFillColors["comedone"]
+                    className.contains("pustule") -> acneClassFillColors["pustule"]
+                    className.contains("papule") -> acneClassFillColors["papule"]
+                    className.contains("nodule") -> acneClassFillColors["nodule"]
+                    else -> acneClassFillColors["comedone"] // default
+                } ?: Paint().apply { 
+                    style = Paint.Style.FILL
+                    color = Color.YELLOW
+                    alpha = 60
                 }
 
-                // Draw bounding box with improved visibility
-                paint.color = boxColor
-                paint.strokeWidth = 10f  // Thicker for better visibility
-                paint.style = Paint.Style.STROKE
-                canvas.drawRect(left, top, right, bottom, paint)
-                
-                // Draw a semi-transparent fill for better visibility
-                val fillPaint = Paint().apply {
-                    color = boxColor
-                    style = Paint.Style.FILL
-                    alpha = 60  // Semi-transparent
-                }
+                // Draw filled area
                 canvas.drawRect(left, top, right, bottom, fillPaint)
                 
-                // Draw label background
+                // Draw outline
+                canvas.drawRect(left, top, right, bottom, basePaint)
+                
+                // Display class name and confidence
                 val confidence = (detection.confidence * 100).toInt()
-                val labelText = "${detection.className} ${confidence}%"
-                textPaint.textSize = 40f  // Larger text for better visibility
-                val textWidth = textPaint.measureText(labelText) + 20f
-                val textHeight = textPaint.textSize + 10f
+                
+                // Simplified class name
+                val shortClassName = when {
+                    className.contains("comedone") -> "Comedone"
+                    className.contains("pustule") -> "Pustule"
+                    className.contains("papule") -> "Papule" 
+                    className.contains("nodule") -> "Nodule"
+                    else -> className
+                }
+                
+                val labelText = "$shortClassName ${confidence}%"
+                textPaint.textSize = 30f 
+                val textWidth = textPaint.measureText(labelText) + 10f
+                val textHeight = textPaint.textSize + 5f
 
-                // Position label above the box
-                backgroundPaint.color = Color.parseColor("#AA000000") // Semi-transparent black
+                // Draw label background
                 canvas.drawRect(left, top - textHeight, left + textWidth, top, backgroundPaint)
 
                 // Draw label text
-                textPaint.color = Color.WHITE
-                canvas.drawText(labelText, left + 10f, top - 10f, textPaint)
-                
-                // Log successful drawing
-                Log.d(TAG, "Successfully drew bounding box for ${detection.className}")
+                canvas.drawText(labelText, left + 5f, top - 5f, textPaint)
             } catch (e: Exception) {
                 Log.e(TAG, "Error drawing detection box: ${e.message}")
-                e.printStackTrace()
-            }
-        }
-
-        // Add this new method to calculate the visible rectangle of the model's coordinate space
-        private fun getVisibleModelRect(): Rect {
-            val previewAspectRatio = previewWidth.toFloat() / previewHeight.toFloat()
-            val modelAspectRatio = MODEL_WIDTH.toFloat() / MODEL_HEIGHT.toFloat() // 1.0 (square)
-            
-            // Calculate the rectangle in the preview that represents the visible part of the model
-            if (previewAspectRatio > modelAspectRatio) {
-                // Preview is wider than the model - use height for scaling, center horizontally
-                val effectiveHeight = previewHeight
-                val effectiveWidth = effectiveHeight * modelAspectRatio
-                val leftPadding = (previewWidth - effectiveWidth) / 2
-                
-                return Rect(
-                    leftPadding.toInt(),
-                    0,
-                    (leftPadding + effectiveWidth).toInt(),
-                    previewHeight
-                )
-            } else {
-                // Preview is taller than the model - use width for scaling, center vertically
-                val effectiveWidth = previewWidth
-                val effectiveHeight = effectiveWidth / modelAspectRatio
-                val topPadding = (previewHeight - effectiveHeight) / 2
-                
-                return Rect(
-                    0,
-                    topPadding.toInt(),
-                    previewWidth,
-                    (topPadding + effectiveHeight).toInt()
-                )
             }
         }
         
         override fun surfaceCreated(holder: SurfaceHolder) {
             Log.d(TAG, "BoxOverlay surface created")
-            drawDetections()
+            drawingEnabled = true
+            
+            // Force a redraw when surface is created
+            post {
+                try {
+                    drawDetections(true)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error drawing on surface creation: ${e.message}")
+                }
+            }
         }
         
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -839,12 +902,23 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
             if (width > 0 && height > 0) {
                 previewWidth = width
                 previewHeight = height
-                drawDetections()
+                // Clear cached guide rect when surface changes
+                cachedGuideRect = null
+                
+                // Try to redraw on surface change
+                post {
+                    try {
+                        drawDetections(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error drawing on surface change: ${e.message}")
+                    }
+                }
             }
         }
         
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             Log.d(TAG, "BoxOverlay surface destroyed")
+            drawingEnabled = false
         }
 
         // Helper function to format floats nicely

@@ -34,6 +34,7 @@ import java.util.Arrays
 import java.util.ArrayList
 import java.io.File
 import android.graphics.Rect
+import android.graphics.RectF
 import android.view.WindowManager
 import androidx.fragment.app.DialogFragment
 import android.os.Parcelable
@@ -519,14 +520,14 @@ class ResultActivity : AppCompatActivity() {
         private val paint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.STROKE
-            strokeWidth = 4f
+            strokeWidth = 2f  // Thinner for smaller view
         }
         
         private val textPaint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.FILL
             color = Color.WHITE
-            textSize = 30f
+            textSize = 24f  // Smaller text for pager view
         }
         
         private val backgroundPaint = Paint().apply {
@@ -615,19 +616,23 @@ class ResultActivity : AppCompatActivity() {
                 // Clear the canvas
                 canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
                 
-                // Update image rect
+                // Update image rect for accurate positioning
                 updateImageRect()
                 
                 // Draw each detection box
                 if (detections.isEmpty()) {
-                    // Draw "No detections" text if needed
-                    textPaint.textSize = 40f
-                    val text = "No acne detected in this region"
-                    val x = (previewWidth - textPaint.measureText(text)) / 2
-                    canvas.drawText(text, x, previewHeight / 2f, textPaint)
+                    // Optional: Draw "No detections" text if needed
                 } else {
-                    // Draw each bounding box
-                    detections.forEach { detection ->
+                    // Filter to only include detections that have centers within the image area
+                    val visibleDetections = detections.filter { detection ->
+                        val centerX = imageRect.left + (detection.boundingBox.x * imageRect.width())
+                        val centerY = imageRect.top + (detection.boundingBox.y * imageRect.height())
+                        centerX >= imageRect.left && centerX <= imageRect.right &&
+                        centerY >= imageRect.top && centerY <= imageRect.bottom
+                    }
+                    
+                    // Draw each detection
+                    visibleDetections.forEach { detection ->
                         drawDetection(canvas, detection)
                     }
                 }
@@ -655,11 +660,20 @@ class ResultActivity : AppCompatActivity() {
             paint.color = boxColor
             
             try {
-                // Convert normalized coordinates to screen coordinates
-                val left = (detection.boundingBox.x - detection.boundingBox.width / 2) * previewWidth
-                val top = (detection.boundingBox.y - detection.boundingBox.height / 2) * previewHeight
-                val right = (detection.boundingBox.x + detection.boundingBox.width / 2) * previewWidth
-                val bottom = (detection.boundingBox.y + detection.boundingBox.height / 2) * previewHeight
+                // Convert normalized coordinates to image coordinates
+                val centerX = imageRect.left + (detection.boundingBox.x * imageRect.width())
+                val centerY = imageRect.top + (detection.boundingBox.y * imageRect.height())
+                
+                // Calculate box size (ensure minimum size for visibility)
+                val minBoxSize = imageRect.width() * 0.02f // 2% of image width minimum
+                val boxWidth = Math.max(detection.boundingBox.width * imageRect.width(), minBoxSize)
+                val boxHeight = Math.max(detection.boundingBox.height * imageRect.height(), minBoxSize)
+                
+                // Calculate box coordinates
+                val left = centerX - (boxWidth / 2)
+                val top = centerY - (boxHeight / 2)
+                val right = centerX + (boxWidth / 2)
+                val bottom = centerY + (boxHeight / 2)
                 
                 // Clip coordinates to image bounds
                 val clippedLeft = left.coerceIn(imageRect.left.toFloat(), imageRect.right.toFloat())
@@ -669,21 +683,18 @@ class ResultActivity : AppCompatActivity() {
                 
                 // Only draw if the box is visible (has width and height)
                 if (clippedRight > clippedLeft && clippedBottom > clippedTop) {
-                    // Draw bounding box
-                    canvas.drawRect(clippedLeft, clippedTop, clippedRight, clippedBottom, paint)
-                    
-                    // Draw a semi-transparent fill
+                    // Draw a semi-transparent fill (more visible in small view)
                     val fillPaint = Paint().apply {
                         color = boxColor
                         style = Paint.Style.FILL
-                        alpha = 60  // Semi-transparent
+                        alpha = 80  // More opaque for better visibility in small view
                     }
                     canvas.drawRect(clippedLeft, clippedTop, clippedRight, clippedBottom, fillPaint)
                     
-                    // Draw center dot if it's within the image bounds
-                    val centerX = detection.boundingBox.x * previewWidth
-                    val centerY = detection.boundingBox.y * previewHeight
+                    // Draw the box outline
+                    canvas.drawRect(clippedLeft, clippedTop, clippedRight, clippedBottom, paint)
                     
+                    // Draw center dot
                     if (centerX >= imageRect.left && centerX <= imageRect.right &&
                         centerY >= imageRect.top && centerY <= imageRect.bottom) {
                         val centerPaint = Paint().apply {
@@ -691,43 +702,54 @@ class ResultActivity : AppCompatActivity() {
                             style = Paint.Style.FILL
                             alpha = 255
                         }
-                        canvas.drawCircle(centerX, centerY, 5f, centerPaint)
+                        canvas.drawCircle(centerX, centerY, 3f, centerPaint)  // Smaller dot for pager view
                     }
                     
-                    // Prepare text with class name and confidence
-                    val confidence = (detection.confidence * 100).toInt()
-                    val text = "${detection.className} ${confidence}%"
+                    // For small view, may want to skip labels for very small boxes
+                    val boxArea = (clippedRight - clippedLeft) * (clippedBottom - clippedTop)
+                    val minAreaForLabel = imageRect.width() * imageRect.height() * 0.003f  // 0.3% of image area
                     
-                    // Calculate text position - ensure it's within image bounds
-                    val textWidth = textPaint.measureText(text)
-                    val textHeight = textPaint.textSize
-                    
-                    // Try to position label above the box, but keep it inside the image
-                    var labelLeft = clippedLeft
-                    var labelTop = clippedTop - textHeight - 5
-                    
-                    // If label would be outside the top of the image, position it inside the box at the top
-                    if (labelTop < imageRect.top) {
-                        labelTop = clippedTop + 5
+                    if (boxArea > minAreaForLabel) {
+                        // Prepare text with abbreviated class name and confidence
+                        val confidence = (detection.confidence * 100).toInt()
+                        val shortName = when {
+                            detection.className.contains("comedone") -> "Com"
+                            detection.className.contains("pustule") -> "Pus"
+                            detection.className.contains("papule") -> "Pap"
+                            detection.className.contains("nodule") -> "Nod"
+                            else -> "Acne"
+                        }
+                        val text = "$shortName ${confidence}%"
+                        
+                        // Smaller text for pager view
+                        textPaint.textSize = 20f
+                        val textWidth = textPaint.measureText(text)
+                        val textHeight = textPaint.textSize + 2f
+                        
+                        // Position text above the box if possible
+                        var labelLeft = clippedLeft
+                        var labelTop = clippedTop - textHeight - 2f
+                        
+                        // Keep label inside image bounds
+                        if (labelTop < imageRect.top) {
+                            labelTop = clippedTop + 2f
+                        }
+                        if (labelLeft + textWidth > imageRect.right) {
+                            labelLeft = imageRect.right - textWidth - 2f
+                        }
+                        
+                        // Draw text background
+                        val textBackground = RectF(
+                            labelLeft,
+                            labelTop,
+                            labelLeft + textWidth + 4f,
+                            labelTop + textHeight
+                        )
+                        canvas.drawRect(textBackground, backgroundPaint)
+                        
+                        // Draw text
+                        canvas.drawText(text, labelLeft + 2f, labelTop + textHeight - 2f, textPaint)
                     }
-                    
-                    // If label would extend beyond right edge of image, align right edge with image
-                    if (labelLeft + textWidth + 10 > imageRect.right) {
-                        labelLeft = imageRect.right - textWidth - 10
-                    }
-                    
-                    // Draw background for text
-                    canvas.drawRect(
-                        labelLeft,
-                        labelTop,
-                        labelLeft + textWidth + 10,
-                        labelTop + textHeight,
-                        backgroundPaint
-                    )
-                    
-                    // Draw text
-                    textPaint.color = Color.WHITE
-                    canvas.drawText(text, labelLeft + 5, labelTop + textHeight - 5, textPaint)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error drawing detection: ${e.message}")
@@ -813,9 +835,36 @@ class ResultActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
             
-            // Set detections after layout is ready
+            // Set detections after layout is ready and image is measured
             imageView.post {
+                // Get more accurate image bounds by checking the image matrix
+                val matrixValues = FloatArray(9)
+                imageView.imageMatrix.getValues(matrixValues)
+                
+                // Get the scaling factors and translation from the matrix
+                val scaleX = matrixValues[Matrix.MSCALE_X]
+                val scaleY = matrixValues[Matrix.MSCALE_Y]
+                val transX = matrixValues[Matrix.MTRANS_X]
+                val transY = matrixValues[Matrix.MTRANS_Y]
+                
+                // Calculate the actual display dimensions
+                val imageWidth = image?.width?.toFloat() ?: 0f
+                val imageHeight = image?.height?.toFloat() ?: 0f
+                val displayWidth = imageWidth * scaleX
+                val displayHeight = imageHeight * scaleY
+                
+                // Calculate the actual image boundaries within the container
+                val imageRect = Rect(
+                    transX.toInt(),
+                    transY.toInt(),
+                    (transX + displayWidth).toInt(),
+                    (transY + displayHeight).toInt()
+                )
+                
+                Log.d("ExpandedDialog", "Image displayed at: $imageRect, original: ${image?.width}x${image?.height}")
+                
                 overlay.setPreviewSize(container.width, container.height)
+                overlay.setImageDisplayRect(imageRect)
                 overlay.setDetections(detections?.toList() ?: emptyList())
             }
             
@@ -860,6 +909,7 @@ class ResultActivity : AppCompatActivity() {
             private var imageWidth = 0
             private var imageHeight = 0
             private var imageRect = Rect()
+            private var imageDisplayRect = Rect()
             
             init {
                 setZOrderOnTop(true)
@@ -878,6 +928,15 @@ class ResultActivity : AppCompatActivity() {
                 previewHeight = height
                 // Set a default image rect covering the whole area
                 imageRect.set(0, 0, width, height)
+            }
+            
+            fun setImageDisplayRect(rect: Rect) {
+                imageDisplayRect = rect
+                imageRect = rect
+                // Force redraw if we have detections
+                if (detections.isNotEmpty()) {
+                    drawDetections()
+                }
             }
             
             private fun drawDetections() {
@@ -935,73 +994,94 @@ class ResultActivity : AppCompatActivity() {
                 paint.color = boxColor
                 
                 try {
-                    // Convert normalized coordinates to screen coordinates
-                    val left = (detection.boundingBox.x - detection.boundingBox.width / 2) * previewWidth
-                    val top = (detection.boundingBox.y - detection.boundingBox.height / 2) * previewHeight
-                    val right = (detection.boundingBox.x + detection.boundingBox.width / 2) * previewWidth
-                    val bottom = (detection.boundingBox.y + detection.boundingBox.height / 2) * previewHeight
+                    // Convert normalized coordinates to image display coordinates
+                    val centerX = imageDisplayRect.left + (detection.boundingBox.x * imageDisplayRect.width())
+                    val centerY = imageDisplayRect.top + (detection.boundingBox.y * imageDisplayRect.height())
+                    val boxWidth = detection.boundingBox.width * imageDisplayRect.width()
+                    val boxHeight = detection.boundingBox.height * imageDisplayRect.height()
                     
-                    // Draw bounding box with thicker stroke for better visibility
-                    canvas.drawRect(left, top, right, bottom, paint)
+                    // Calculate raw box coordinates
+                    val left = centerX - (boxWidth / 2)
+                    val top = centerY - (boxHeight / 2)
+                    val right = centerX + (boxWidth / 2)
+                    val bottom = centerY + (boxHeight / 2)
                     
-                    // Draw a semi-transparent fill
-                    val fillPaint = Paint().apply {
-                        color = boxColor
-                        style = Paint.Style.FILL
-                        alpha = 60
+                    // IMPORTANT FIX: Clip coordinates to image bounds
+                    val clippedLeft = left.coerceIn(imageDisplayRect.left.toFloat(), imageDisplayRect.right.toFloat())
+                    val clippedTop = top.coerceIn(imageDisplayRect.top.toFloat(), imageDisplayRect.bottom.toFloat())
+                    val clippedRight = right.coerceIn(imageDisplayRect.left.toFloat(), imageDisplayRect.right.toFloat())
+                    val clippedBottom = bottom.coerceIn(imageDisplayRect.top.toFloat(), imageDisplayRect.bottom.toFloat())
+                    
+                    // Only draw if the box has positive width and height after clipping
+                    if (clippedRight > clippedLeft && clippedBottom > clippedTop) {
+                        // Draw bounding box with thicker stroke for better visibility
+                        canvas.drawRect(clippedLeft, clippedTop, clippedRight, clippedBottom, paint)
+                        
+                        // Draw a semi-transparent fill
+                        val fillPaint = Paint().apply {
+                            color = boxColor
+                            style = Paint.Style.FILL
+                            alpha = 60
+                        }
+                        canvas.drawRect(clippedLeft, clippedTop, clippedRight, clippedBottom, fillPaint)
+                        
+                        // Draw center marker only if center is within image bounds
+                        if (centerX >= imageDisplayRect.left && centerX <= imageDisplayRect.right &&
+                            centerY >= imageDisplayRect.top && centerY <= imageDisplayRect.bottom) {
+                            val centerPaint = Paint().apply {
+                                color = boxColor
+                                style = Paint.Style.FILL
+                                alpha = 255
+                            }
+                            canvas.drawCircle(
+                                centerX,
+                                centerY,
+                                10f, // Larger dot in fullscreen mode
+                                centerPaint
+                            )
+                        }
+                        
+                        // Prepare text with class name and confidence
+                        val confidence = (detection.confidence * 100).toInt()
+                        val className = when {
+                            detection.className.contains("comedone") -> "Comedone"
+                            detection.className.contains("pustule") -> "Pustule"
+                            detection.className.contains("papule") -> "Papule"
+                            detection.className.contains("nodule") -> "Nodule"
+                            else -> detection.className
+                        }
+                        val text = "$className ${confidence}%"
+                        
+                        // Larger text in fullscreen mode
+                        textPaint.textSize = 40f
+                        val textWidth = textPaint.measureText(text)
+                        
+                        // Position text above the box
+                        var labelLeft = clippedLeft
+                        var labelTop = clippedTop - 50
+                        
+                        // Ensure label stays on screen and within image bounds
+                        if (labelTop < imageDisplayRect.top + 10) labelTop = clippedTop + 30
+                        if (labelLeft + textWidth + 20 > imageDisplayRect.right) {
+                            labelLeft = imageDisplayRect.right - textWidth - 20
+                        }
+                        
+                        // Further constrain to image bounds
+                        labelLeft = labelLeft.coerceIn(imageDisplayRect.left.toFloat(), 
+                            (imageDisplayRect.right - textWidth - 20).coerceAtLeast(imageDisplayRect.left.toFloat()))
+                        
+                        // Draw background for text
+                        val textBackgroundRect = Rect(
+                            labelLeft.toInt(), 
+                            labelTop.toInt(),
+                            (labelLeft + textWidth + 20).toInt(),
+                            (labelTop + 45).toInt()
+                        )
+                        canvas.drawRect(textBackgroundRect, backgroundPaint)
+                        
+                        // Draw text
+                        canvas.drawText(text, labelLeft + 10, labelTop + 35, textPaint)
                     }
-                    canvas.drawRect(left, top, right, bottom, fillPaint)
-                    
-                    // Draw center marker
-                    val centerPaint = Paint().apply {
-                        color = boxColor
-                        style = Paint.Style.FILL
-                        alpha = 255
-                    }
-                    canvas.drawCircle(
-                        detection.boundingBox.x * previewWidth,
-                        detection.boundingBox.y * previewHeight,
-                        10f, // Larger dot in fullscreen mode
-                        centerPaint
-                    )
-                    
-                    // Prepare text with class name and confidence
-                    val confidence = (detection.confidence * 100).toInt()
-                    val className = when {
-                        detection.className.contains("comedone") -> "Comedone"
-                        detection.className.contains("pustule") -> "Pustule"
-                        detection.className.contains("papule") -> "Papule"
-                        detection.className.contains("nodule") -> "Nodule"
-                        else -> detection.className
-                    }
-                    val text = "$className ${confidence}%"
-                    
-                    // Larger text in fullscreen mode
-                    textPaint.textSize = 40f
-                    val textWidth = textPaint.measureText(text)
-                    
-                    // Position text above the box
-                    var labelLeft = left
-                    var labelTop = top - 50
-                    
-                    // Ensure label stays on screen
-                    if (labelTop < 10) labelTop = top + 30
-                    if (labelLeft + textWidth + 20 > previewWidth) {
-                        labelLeft = previewWidth - textWidth - 20
-                    }
-                    
-                    // Draw background for text
-                    val textBackgroundRect = Rect(
-                        labelLeft.toInt(), 
-                        labelTop.toInt(),
-                        (labelLeft + textWidth + 20).toInt(),
-                        (labelTop + 45).toInt()
-                    )
-                    canvas.drawRect(textBackgroundRect, backgroundPaint)
-                    
-                    // Draw text
-                    canvas.drawText(text, labelLeft + 10, labelTop + 35, textPaint)
-                    
                 } catch (e: Exception) {
                     Log.e("ExpandedBoxOverlay", "Error drawing detection: ${e.message}")
                 }

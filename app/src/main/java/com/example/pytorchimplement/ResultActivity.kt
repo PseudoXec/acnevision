@@ -196,7 +196,7 @@ class ResultActivity : AppCompatActivity() {
         val pustuleCount = intent.getIntExtra("pustule_count", 0)
         val papuleCount = intent.getIntExtra("papule_count", 0)
         val noduleCount = intent.getIntExtra("nodule_count", 0)
-        
+
         // Get the inference time from intent
         val inferenceTime = intent.getLongExtra("inference_time", 0)
         
@@ -213,14 +213,14 @@ class ResultActivity : AppCompatActivity() {
         if (noduleCount > 0) summaryBuilder.append("• Nodules: $noduleCount (${calculatePercentage(noduleCount, totalCount)}%)\n")
         summaryBuilder.append("\nTotal Acne Count: $totalCount")
         summaryBuilder.append("\nInference Time: ${inferenceTime}ms")
-        
+
         detailsTextView.text = summaryBuilder.toString()
         
         // Set up pie chart for acne distribution
         setupPieChart(comedoneCount, pustuleCount, papuleCount, noduleCount, totalCount)
 
         // Set recommendations based on severity
-        val recommendationsBuilder = StringBuilder("Recommendations:\n\n")
+        val recommendationsBuilder = StringBuilder()
         
         when (severity) {
             "No Acne" -> {
@@ -228,21 +228,18 @@ class ResultActivity : AppCompatActivity() {
             }
             "Mild" -> {
                 recommendationsBuilder.append("• Mild acne detected\n")
-                recommendationsBuilder.append("• Consider over-the-counter treatments containing benzoyl peroxide or salicylic acid\n")
                 recommendationsBuilder.append("• Maintain a consistent cleansing routine\n")
                 recommendationsBuilder.append("• Avoid picking or squeezing acne lesions")
             }
             "Moderate" -> {
                 recommendationsBuilder.append("• Moderate acne detected - consider prescription treatments\n")
                 recommendationsBuilder.append("• Consider consulting with a dermatologist\n")
-                recommendationsBuilder.append("• Recommended treatments: Topical antibiotics, Retinoids\n")
                 recommendationsBuilder.append("• Avoid picking or squeezing acne lesions")
             }
             "Severe", "Very Severe" -> {
-                recommendationsBuilder.append("• Severe acne detected - prescription treatment recommended\n")
+                recommendationsBuilder.append("• Severe acne detected\n")
+                recommendationsBuilder.append("• Prescription treatment recommended\n")
                 recommendationsBuilder.append("• Consult with a dermatologist as soon as possible\n")
-                recommendationsBuilder.append("• Potential treatments may include oral antibiotics, isotretinoin, or hormonal therapy\n")
-                recommendationsBuilder.append("• Follow a gentle skincare routine to avoid irritation")
             }
             else -> {
                 recommendationsBuilder.append("• Please consult with a dermatologist for personalized advice")

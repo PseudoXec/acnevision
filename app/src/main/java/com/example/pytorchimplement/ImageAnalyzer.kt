@@ -135,7 +135,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     
     // Class labels
     private val classNames = arrayOf(
-        "comedone", "pustule", "papule", "nodule"
+        "comedones", "nodules", "papules", "pustules"
     )
 
     // For skipping frames (optional, to reduce processing load)
@@ -160,6 +160,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             // Create session options
             val sessionOptions = OrtSession.SessionOptions()
             sessionOptions.setIntraOpNumThreads(4)
+            sessionOptions.addConfigEntry("session.use_gpu", "1")
             
             // Create inference session
             ortSession = ortEnvironment?.createSession(modelBytes, sessionOptions)
@@ -251,10 +252,11 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
                         severity = 0,
                         timestamp = currentTime,
                         acneCounts = mapOf(
-                            "comedone" to 0,
-                            "pustule" to 0,
-                            "papule" to 0,
-                            "nodule" to 0
+                            "comedones" to 0,
+                            "nodules" to 0,
+                            "papules" to 0,
+                            "pustules" to 0
+
                         ),
                         detections = emptyList()
                     ),
@@ -289,7 +291,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             imageProxy.close()
         }
     }
-    
+
     private fun runInference(bitmap: Bitmap, rotation: Int): AnalysisResult {
         // Rotate bitmap first if needed
         val rotatedBitmap = rotateBitmap(bitmap, rotation)
@@ -463,9 +465,9 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
     private fun processResults(output: OrtSession.Result, transformParams: TransformationParams): AnalysisResult {
         val acneCounts = mutableMapOf(
             "comedone" to 0,
-            "pustule" to 0,
+            "nodule" to 0,
             "papule" to 0,
-            "nodule" to 0
+            "pustule" to 0
         )
         
         val detections = mutableListOf<Detection>()
@@ -477,13 +479,14 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             
             val classNames = mapOf(
                 0 to "comedone",
-                1 to "pustule",
+                1 to "nodule",
                 2 to "papule",
-                3 to "nodule"
+                3 to "pustule"
+
             )
             
             // Set appropriate confidence thresholds for the Roboflow model
-            val confidenceThreshold = 0.15f
+            val confidenceThreshold = 0.3f
             
             // Get the main output tensor - this model uses the key "output"
             val outputTensor = output.first { o -> o.key == "output"}.value as? OnnxTensor
@@ -671,10 +674,10 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
         detectionsByClass.forEach { (className, classDetections) ->
             // Use different IoU thresholds for different acne types
             val classIouThreshold = when (className) {
-                "comedone" -> 0.3f  // Comedones are smaller, use higher threshold to preserve more of them
-                "pustule" -> 0.25f  // Medium threshold for pustules
-                "papule" -> 0.2f    // Standard threshold for papules
-                "nodule" -> 0.4f    // Nodules are larger, use higher threshold to avoid duplicates
+                "comedone" -> 0.25f  // Comedones are smaller, use higher threshold to preserve more of them
+                "pustule" -> 0.28f  // Medium threshold for pustules
+                "papule" -> 0.3f    // Standard threshold for papules
+                "nodule" -> 0.45f    // Nodules are larger, use higher threshold to avoid duplicates
                 else -> iouThreshold // Default fallback
             }
             

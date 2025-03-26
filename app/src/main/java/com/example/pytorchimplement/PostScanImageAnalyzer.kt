@@ -155,25 +155,25 @@ class PostScanImageAnalyzer(private val context: Context) {
         )
         var totalGAGSScore = 0
         var totalInferenceTimeMs = 0L
-        
+
         // Process each region
         FacialRegion.values().forEach { region ->
             val bitmap = images[region.id]
             if (bitmap != null) {
                 val result = analyzeRegion(bitmap, region)
                 regionResults[region] = result
-                
+
                 // Add to total counts
                 result.acneCounts.forEach { (acneType, count) ->
                     totalAcneCounts[acneType] = totalAcneCounts.getOrDefault(acneType, 0) + count
                 }
-                
+
                 // Add to total GAGS score
                 totalGAGSScore += result.regionScore
-                
+
                 // Add to total inference time
                 totalInferenceTimeMs += result.inferenceTimeMs
-                
+
                 Log.d(TAG, "Region ${region.displayName}: Score=${result.regionScore}, " +
                         "Dominant=${result.dominantAcneType}, Counts=${result.acneCounts}, " +
                         "Inference time=${result.inferenceTimeMs}ms")
@@ -181,14 +181,14 @@ class PostScanImageAnalyzer(private val context: Context) {
                 Log.e(TAG, "Missing image for region: ${region.displayName}")
             }
         }
-        
+
         // Calculate severity based on total GAGS score
         val severity = calculateSeverityFromGAGS(totalGAGSScore)
-        
+
         Log.d(TAG, "Total GAGS Score: $totalGAGSScore, Severity: $severity")
         Log.d(TAG, "Total Acne Counts: $totalAcneCounts")
         Log.d(TAG, "Total inference time: ${totalInferenceTimeMs}ms")
-        
+
         return AnalysisResult(
             timestamp = System.currentTimeMillis(),
             regionResults = regionResults,
@@ -198,7 +198,7 @@ class PostScanImageAnalyzer(private val context: Context) {
             totalInferenceTimeMs = totalInferenceTimeMs
         )
     }
-    
+
     /**
      * Analyze a single facial region image
      * @param bitmap The image to analyze
@@ -212,7 +212,14 @@ class PostScanImageAnalyzer(private val context: Context) {
             "papule" to 0,
             "nodule" to 0
         )
-        
+
+        val severityMap = mapOf(
+            "comedone" to 1,
+            "papule" to 2,
+            "pustule" to 3,
+            "nodule" to 4
+        )
+
         // Get detections and inference time
         val (detections, inferenceTimeMs) = runInference(bitmap, region)
         
@@ -220,18 +227,19 @@ class PostScanImageAnalyzer(private val context: Context) {
         detections.forEach { detection ->
             acneCounts[detection.className] = acneCounts.getOrDefault(detection.className, 0) + 1
         }
-        
-        // Find dominant acne type (most frequent)
+
+        // Find most severe acne type (highest severity score)
         val dominantAcne = acneCounts.entries
             .filter { it.value > 0 }
-            .maxByOrNull { it.value }?.key ?: "NO_LESION"
-        
+            .maxByOrNull { severityMap[it.key] ?: 0 }?.key ?: "NO_LESION"
+
+
         // Calculate region score based on GAGS methodology
         val lesionScore = when (dominantAcne) {
             "comedone" -> 1
             "papule" -> 2
-            "pustule" -> 2
-            "nodule" -> 3
+            "pustule" -> 3
+            "nodule" -> 4
             else -> 0
         }
         
@@ -294,12 +302,12 @@ class PostScanImageAnalyzer(private val context: Context) {
             // Process results
             val classNames = mapOf(
                 0 to "comedone",
-                1 to "pustule",
+                3 to "pustule",
                 2 to "papule",
-                3 to "nodule"
+                1 to "nodule"
             )
             
-            val confidenceThreshold = 0.15f
+            val confidenceThreshold = 0.1f
             
             try {
                 // Get the main output tensor - this model uses the key "output"

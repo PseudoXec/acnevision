@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">PytorchImplement</string>
+    <string name="app_name">AcneVision</string>
     <string name="capture_instruction">Capture %1$s Region</string>
 
 

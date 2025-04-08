@@ -1,5 +1,6 @@
 package com.example.pytorchimplement
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -92,6 +93,13 @@ class SeverityActivity : AppCompatActivity() {
             val intent = Intent(this, StorageSelectionActivity::class.java)
             startActivity(intent)
         }
+    }
+    @SuppressLint("MissingSuperCall")
+    override fun onBackPressed() {
+        // Do Here what ever you want do on back press;
+        val intent = Intent(this, MainActivity::class.java)
+        startActivity(intent)
+        finish()
     }
     
     private fun startImageSelectionProcess() {

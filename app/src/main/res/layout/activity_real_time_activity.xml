@@ -64,9 +64,9 @@
         android:background="#80000000"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"/>
-<!--        app:title="Acne Vision"-->
-<!--        app:titleTextColor="@android:color/white" />-->
+        app:layout_constraintTop_toTopOf="parent"
+        app:title="Acne Vision"
+        app:titleTextColor="@android:color/white" />
 
     <!-- Result text view for displaying real-time analysis -->
     <TextView
@@ -88,21 +88,21 @@
         app:layout_constraintTop_toBottomOf="@id/toolbar" />
         
     <!-- Details text view for displaying acne counts -->
-<!--    <TextView-->
-<!--        android:id="@+id/details_text"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:layout_marginTop="8dp"-->
-<!--        android:layout_marginStart="16dp"-->
-<!--        android:layout_marginEnd="16dp"-->
-<!--        android:background="#80000000"-->
-<!--        android:padding="12dp"-->
-<!--        android:text="DETECTED ACNE TYPES:\nWaiting for analysis..."-->
-<!--        android:textColor="@android:color/white"-->
-<!--        android:textSize="14sp"-->
-<!--        android:gravity="center"-->
-<!--        app:layout_constraintEnd_toEndOf="parent"-->
-<!--        app:layout_constraintStart_toStartOf="parent"-->
-<!--        app:layout_constraintTop_toBottomOf="@id/result_text" />-->
+    <TextView
+        android:id="@+id/details_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="#80000000"
+        android:padding="12dp"
+        android:text="DETECTED ACNE TYPES:\nWaiting for analysis..."
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:gravity="center"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/result_text" />
 
 </androidx.constraintlayout.widget.ConstraintLayout> 

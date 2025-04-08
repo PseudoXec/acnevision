@@ -220,7 +220,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             imageProxy.close()
             return
         }
-        
+
         if (currentTime - lastAnalysisTime < analysisCooldown) {
             Log.d(TAG, "Frame cooldown: time since last analysis=${currentTime - lastAnalysisTime}ms")
             imageProxy.close()
@@ -237,12 +237,12 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
         Log.d(TAG, "Starting frame analysis at $currentTime")
         isAnalyzing = true
         lastAnalysisTime = currentTime
-        
+
         try {
             // Convert image to bitmap for processing
             val bitmap = imageProxy.toBitmap()
             Log.d(TAG, "Converted frame to bitmap: ${bitmap.width}x${bitmap.height}")
-            
+
             // Check if the frame is likely empty or dark (simple check)
             if (isEmptyOrDarkFrame(bitmap)) {
                 Log.d(TAG, "Detected empty or dark frame, skipping analysis")
@@ -264,25 +264,25 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
                 )
                 return
             }
-            
+
             // Account for potential camera rotation/orientation
             // This is important as the camera preview may be in different orientation than what the model expects
             // Different devices and configurations may require different adjustments
             val cameraOrientationAdjustment = determineCameraOrientation(imageProxy)
             Log.d(TAG, "Camera orientation adjustment: $cameraOrientationAdjustment")
-            
+
             // Run ONNX inference
             val result = runInference(bitmap, cameraOrientationAdjustment)
-            
+
             // Save the result
             lastAnalysisResult = result
 
             val inferenceTime = System.currentTimeMillis() - currentTime
             // Notify listener
             listener.onAnalysisComplete(result, inferenceTime)
-            
+
             Log.d(TAG, "Frame analysis completed in ${System.currentTimeMillis() - currentTime}ms")
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error analyzing image: ${e.message}")
             e.printStackTrace()
@@ -486,7 +486,7 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             )
             
             // Set appropriate confidence thresholds for the Roboflow model
-            val confidenceThreshold = 0.3f
+            val confidenceThreshold = 0.15f
             
             // Get the main output tensor - this model uses the key "output"
             val outputTensor = output.first { o -> o.key == "output"}.value as? OnnxTensor
@@ -675,9 +675,9 @@ class ImageAnalyzer(private val context: Context, private val listener: Analysis
             // Use different IoU thresholds for different acne types
             val classIouThreshold = when (className) {
                 "comedone" -> 0.25f  // Comedones are smaller, use higher threshold to preserve more of them
-                "pustule" -> 0.28f  // Medium threshold for pustules
-                "papule" -> 0.3f    // Standard threshold for papules
-                "nodule" -> 0.45f    // Nodules are larger, use higher threshold to avoid duplicates
+                "pustule" -> 0.30f  // Medium threshold for pustules
+                "papule" -> 0.25f    // Standard threshold for papules
+                "nodule" -> 0.35f    // Nodules are larger, use higher threshold to avoid duplicates
                 else -> iouThreshold // Default fallback
             }
             

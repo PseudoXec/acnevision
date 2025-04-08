@@ -1,6 +1,7 @@
 package com.example.pytorchimplement
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -8,39 +9,35 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import android.os.Bundle
+import android.os.Parcel
+import android.os.Parcelable
 import android.util.Log
+import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import android.content.Context
-import androidx.viewpager2.widget.ViewPager2
+import androidx.fragment.app.DialogFragment
 import androidx.recyclerview.widget.RecyclerView
-import android.view.LayoutInflater
-import com.example.pytorchimplement.ImageAnalyzer.Detection
+import androidx.viewpager2.widget.ViewPager2
 import com.example.pytorchimplement.ImageAnalyzer.BoundingBox
+import com.example.pytorchimplement.ImageAnalyzer.Detection
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
-import com.github.mikephil.charting.utils.ColorTemplate
-import java.util.Arrays
-import java.util.ArrayList
 import java.io.File
-import android.graphics.Rect
-import android.graphics.RectF
-import android.view.WindowManager
-import androidx.fragment.app.DialogFragment
-import android.os.Parcelable
-import android.os.Parcel
-import android.widget.ImageButton
-import android.view.Gravity
 
 /**
  * Activity that displays the results of acne analysis with severity scores and bounding boxes.
@@ -252,16 +249,21 @@ class ResultActivity : AppCompatActivity() {
 
         // Set up button actions
         newScanButton.setOnClickListener {
-            val intent = Intent(this, CaptureActivity::class.java)
+            val intent = Intent(this, SeverityActivity::class.java)
             startActivity(intent)
             finish()
         }
 
         homeButton.setOnClickListener {
-            val intent = Intent(this, SeverityActivity::class.java)
+            val intent = Intent(this, MainActivity::class.java)
             startActivity(intent)
             finish()
         }
+    }
+
+    @SuppressLint("MissingSuperCall")
+    override fun onBackPressed() {
+        // Do Here what ever you want do on back press;
     }
     
     private fun loadRegionData() {

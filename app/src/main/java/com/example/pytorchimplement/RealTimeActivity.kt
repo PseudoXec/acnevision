@@ -1,6 +1,7 @@
 package com.example.pytorchimplement
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -115,14 +116,14 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
 
         // Set up the result text view
         resultTextView = findViewById<TextView>(R.id.result_text)
-//        detailsTextView = findViewById<TextView>(R.id.details_text)
+        detailsTextView = findViewById<TextView>(R.id.details_text)
 
         // Make analysis displays visible by default with initial text
         resultTextView.text = "LIVE DETECTION: Starting camera..."
         resultTextView.visibility = View.VISIBLE
 
-//        detailsTextView.text = "DETECTED ACNE TYPES:\nWaiting for analysis..."
-//        detailsTextView.visibility = View.VISIBLE
+        detailsTextView.text = "DETECTED ACNE TYPES:\nWaiting for analysis..."
+        detailsTextView.visibility = View.VISIBLE
 
         // Set up the bounding box overlay
         val previewView = findViewById<PreviewView>(R.id.view_finder)
@@ -153,6 +154,7 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
         // Set up the buttons with proper UI elements
         val severityButton = findViewById<Button>(R.id.redirect_severity)
         val switchCameraButton = findViewById<ImageButton>(R.id.switch_camera)
+        switchCameraButton.visibility = View.INVISIBLE
 
         severityButton.setOnClickListener {
             val intent = Intent(this, SeverityActivity::class.java)
@@ -185,8 +187,10 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
         // Initialize with a larger thread pool for parallel operations
         cameraExecutor = Executors.newFixedThreadPool(2)
     }
-
-
+    @SuppressLint("MissingSuperCall")
+    override fun onBackPressed() {
+        // Do Here what ever you want do on back press;
+    }
     // Save bitmap to a temporary file
     private fun saveBitmapToTempFile(bitmap: Bitmap): File {
         val cachePath = File(cacheDir, "images")
@@ -262,7 +266,7 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
 
                 // Use moderate resolutions that work well
                 val previewResolution = android.util.Size(640, 640)
-                val analysisResolution = android.util.Size(320, 320) // Moderate size for reliable detection
+                val analysisResolution = android.util.Size(640, 640) // Moderate size for reliable detection
 
                 // Configure preview with square aspect ratio
                 val preview = Preview.Builder()
@@ -407,22 +411,22 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                 // Update header text with detection status
                 resultTextView.text = "LIVE DETECTION: Acne Classification"
 
-//                // Create the text for acne counts
-//                val countsText = StringBuilder("DETECTED ACNE TYPES:\n")
-//                var totalCount = 0
+                // Create the text for acne counts
+                val countsText = StringBuilder("DETECTED ACNE TYPES:\n")
+                var totalCount = 0
 //
-//                // Display counts for each acne type
-//                result.acneCounts.forEach { (type, count) ->
-//                    if (count > 0) {
-//                        countsText.append("• ${type.capitalize()}: $count\n")
-//                        totalCount += count
-//                    }
-//                }
-//
-//                // Add total count and processing time
-//                countsText.append("\nTOTAL: $totalCount · TIME: ${inferenceTimeMs}ms")
-//
-//                detailsTextView.text = countsText.toString()
+                // Display counts for each acne type
+                result.acneCounts.forEach { (type, count) ->
+                    if (count > 0) {
+                        countsText.append("• ${type.capitalize()}\n")
+                        totalCount += count
+                    }
+                }
+
+                // Add total count and processing time
+                countsText.append("\nTIME: ${inferenceTimeMs}ms")
+
+                detailsTextView.text = countsText.toString()
 //            }
 //
 //            // Update the timestamp
@@ -667,36 +671,36 @@ class RealTimeActivity : AppCompatActivity(), ImageAnalyzer.AnalysisListener {
                         drawBoxForDetection(canvas, detection)
                     }
 
-                    // Draw a simplified info panel in the top corner
-                    val infoBackgroundPaint = Paint().apply {
-                        style = Paint.Style.FILL
-                        color = Color.parseColor("#AA000000") // Semi-transparent black
-                    }
-
-                    // Prepare text
-                    val countText = "${detections.size} detections"
-                    val timeText = "${processTimeMs}ms"
-
-
-                    textPaint.textSize = 40f
-                    val textWidth = Math.max(
-                        textPaint.measureText(countText),
-                        textPaint.measureText(timeText)
-                    ) + 20f
-                    val textHeight = textPaint.textSize * 2 + 20f
-
-                    // Draw info panel background
-                    canvas.drawRect(
-                        20f, 20f,
-                        20f + textWidth,
-                        20f + textHeight,
-                        infoBackgroundPaint
-                    )
-
-                    // Draw text
-                    textPaint.color = Color.WHITE
-                    canvas.drawText(countText, 30f, 20f + textPaint.textSize, textPaint)
-                    canvas.drawText(timeText, 30f, 20f + textPaint.textSize * 2, textPaint)
+//                    // Draw a simplified info panel in the top corner
+//                    val infoBackgroundPaint = Paint().apply {
+//                        style = Paint.Style.FILL
+//                        color = Color.parseColor("#AA000000") // Semi-transparent black
+//                    }
+//
+//                    // Prepare text
+//                    val countText = "${detections.size} detections"
+//                    val timeText = "${processTimeMs}ms"
+//
+//
+//                    textPaint.textSize = 40f
+//                    val textWidth = Math.max(
+//                        textPaint.measureText(countText),
+//                        textPaint.measureText(timeText)
+//                    ) + 20f
+//                    val textHeight = textPaint.textSize * 2 + 20f
+//
+//                    // Draw info panel background
+//                    canvas.drawRect(
+//                        20f, 20f,
+//                        20f + textWidth,
+//                        20f + textHeight,
+//                        infoBackgroundPaint
+//                    )
+//
+//                    // Draw text
+//                    textPaint.color = Color.WHITE
+//                    canvas.drawText(countText, 30f, 20f + textPaint.textSize, textPaint)
+//                    canvas.drawText(timeText, 30f, 20f + textPaint.textSize * 2, textPaint)
 
                     if (DEBUG) {
                         Log.d(TAG, "Successfully drew ${detections.size} detection boxes to surface")

@@ -91,6 +91,15 @@
                     android:textColor="@android:color/black"
                     android:textSize="20sp"
                     android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/details_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Acne Breakdown:\n• Comedones: 10 (40%)\n• Pustules: 6 (24%)\n• Papules: 7 (28%)\n• Nodules: 2 (8%)\n\nTotal Acne Count: 25"
+                    android:textSize="16sp" />
+                
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
